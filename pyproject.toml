@@ -1,0 +1,36 @@
+[project]
+name = "jackhammer-benchmark"
+version = "0.1.0"
+description = "A reproducible, paired Balatro agent benchmark on the Jackdaw simulator"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "idIing" }]
+dependencies = [
+    "jackdaw",
+    "numpy>=1.24",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.15.6",
+]
+
+[tool.uv.sources]
+jackdaw = { git = "https://github.com/idIing/jackdaw-balatro.git", rev = "4d6f19d9fe73f96603412a59ad5eab16d08937e7" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = ["-q", "-m", "not legacy_slow"]
+markers = [
+    "legacy_slow: retained baseline regression test excluded from the fast public suite",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

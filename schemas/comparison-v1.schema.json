@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/idIing/jackhammer/schemas/comparison-v1.schema.json",
+  "title": "Jackhammer paired comparison v1",
+  "type": "object",
+  "required": ["schema", "created", "arm_a", "arm_b", "provenance", "comparison"],
+  "properties": {
+    "schema": {"const": "jackhammer.comparison/v1"},
+    "created": {"type": "string", "format": "date-time"},
+    "arm_a": {"type": "object"},
+    "arm_b": {"type": "object"},
+    "provenance": {"type": "object"},
+    "attributable": {"type": "boolean"},
+    "comparison": {
+      "type": "object",
+      "required": ["n_paired", "seeds", "depth_delta"],
+      "properties": {
+        "n_paired": {"type": "integer", "minimum": 0},
+        "seeds": {"type": "array", "items": {"type": "string"}},
+        "depth_delta": {
+          "type": "object",
+          "required": ["mean_delta", "bootstrap_ci", "per_seed"]
+        }
+      }
+    }
+  }
+}

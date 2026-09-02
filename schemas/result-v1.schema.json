@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/idIing/jackhammer/schemas/result-v1.schema.json",
+  "title": "Jackhammer result v1",
+  "type": "object",
+  "required": ["schema", "created", "agent", "provenance", "summary"],
+  "properties": {
+    "schema": {"const": "jackhammer.result/v1"},
+    "created": {"type": "string", "format": "date-time"},
+    "agent": {
+      "type": "object",
+      "required": ["name", "description", "deterministic"],
+      "properties": {
+        "name": {"type": "string"},
+        "description": {"type": "string"},
+        "slot1": {"type": "string"},
+        "slot2": {"type": "string"},
+        "tactical": {"type": "string"},
+        "deterministic": {"type": "boolean"}
+      }
+    },
+    "provenance": {"$ref": "#/$defs/provenance"},
+    "attributable": {"type": "boolean"},
+    "runs_path": {"type": ["string", "null"]},
+    "summary": {"type": "object"}
+  },
+  "$defs": {
+    "provenance": {
+      "type": "object",
+      "required": ["protocol", "battery", "engine", "kit", "runtime"],
+      "properties": {
+        "protocol": {"type": "string"},
+        "battery": {
+          "type": "object",
+          "required": ["split", "n_seeds", "digest"],
+          "properties": {
+            "path": {"type": "string"},
+            "split": {"type": "string"},
+            "n_seeds": {"type": "integer", "minimum": 0},
+            "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+          }
+        },
+        "engine": {"type": "object"},
+        "kit": {"type": "object"},
+        "runtime": {"type": "object"}
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "schema": "jackhammer.seed-dataset/v1",
+  "name": "coverage-example",
+  "version": 1,
+  "description": "Three public v1 seeds for demonstrating the diagnostic dataset interface; not a result.",
+  "splits": {
+    "sample": [
+      "PVRQ4K5A",
+      "4NNGD2DN",
+      "V4MDKYTD"
+    ]
+  },
+  "metadata": {
+    "sampling": "First three seeds in the public v1 training order; interface demonstration only."
+  }
+}

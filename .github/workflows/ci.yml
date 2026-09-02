@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check src scripts tests
+      - run: uv run pytest
+      - name: Evaluator smoke
+        run: >-
+          uv run python scripts/evaluate.py
+          --agent greedy-shop --vs random-shop
+          --limit 1 --workers 1
