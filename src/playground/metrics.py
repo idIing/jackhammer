@@ -9,6 +9,9 @@ Consumes the raw-run record shape described in ``docs/result-artifacts.md``
 - win rate with a **Wilson 95% CI**,
 - the **conditional-advance curve** with per-ante Wilson CIs (the primary
   "is it improving" signal when the win-rate CI still includes zero),
+- **fallback substitution rate**: how often the harness replaced a policy's
+  decision with a legal fallback (the audit that says a reported number came
+  from the policy under test and not from the harness standing in for it),
 - **paired A/B** on identical seeds: per-seed depth deltas (mean + bootstrap CI),
   an advance-curve overlay, and a McNemar paired-significance read.
 
@@ -35,6 +38,7 @@ __all__ = [
     "blind_stats",
     "win_rate",
     "advance_curve",
+    "fallback_stats",
     "paired_join",
     "paired_depth_delta",
     "summarize",
@@ -284,6 +288,52 @@ def advance_curve(runs: list[dict]) -> list[dict[str, Any]]:
     return rows
 
 
+def fallback_stats(runs: list[dict]) -> dict[str, Any]:
+    """How often the harness substituted a legal fallback for the policy's choice.
+
+    ``build_decider`` legality-gates every slot output and catches every slot
+    exception, replacing either with a legal fallback so one bad state cannot kill
+    a 240-seed battery. That robustness is deliberate, but it is also silent: a
+    policy that raises on every decision still produces a complete, plausible,
+    fully significant battery. This is the statistic that makes the substitution
+    visible, so a reader can tell whether a reported number came from the agent
+    under test or from the harness standing in for it.
+
+    Reads ``events[].was_fallback`` / ``events[].reasoning`` from the raw records::
+
+        {n_decisions, n_fallback, rate, runs_affected, n_runs, by_reason, errors}
+
+    ``by_reason`` counts only substituted decisions, keyed by the harness reason
+    (``fallback-error:<ExcType>``, ``fallback-illegal``, ``fallback-phase``).
+    ``errors`` is the subtotal for ``fallback-error:*`` alone — a raised exception
+    inside a policy is always a defect in that policy, never a property of the run.
+    """
+    n_decisions = n_fallback = runs_affected = errors = 0
+    by_reason: Counter[str] = Counter()
+    for run in runs:
+        hit = False
+        for event in run.get("events") or []:
+            n_decisions += 1
+            if not event.get("was_fallback"):
+                continue
+            n_fallback += 1
+            hit = True
+            reason = str(event.get("reasoning") or "fallback-unlabelled")
+            by_reason[reason] += 1
+            if reason.startswith("fallback-error:"):
+                errors += 1
+        runs_affected += hit
+    return {
+        "n_decisions": n_decisions,
+        "n_fallback": n_fallback,
+        "rate": (n_fallback / n_decisions) if n_decisions else float("nan"),
+        "runs_affected": runs_affected,
+        "n_runs": len(runs),
+        "errors": errors,
+        "by_reason": dict(by_reason.most_common()),
+    }
+
+
 def summarize(runs: list[dict]) -> dict[str, Any]:
     """Single-config structured summary (all metrics for one battery)."""
     meta = (runs[0].get("meta") or {}) if runs else {}
@@ -296,6 +346,7 @@ def summarize(runs: list[dict]) -> dict[str, Any]:
         "blind_stats": blind_stats(runs),
         "win_rate": win_rate(runs),
         "advance_curve": advance_curve(runs),
+        "fallback": fallback_stats(runs),
     }
 
 

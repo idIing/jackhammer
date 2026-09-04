@@ -257,3 +257,54 @@ def test_compare_structure_and_mcnemar(tmp_path):
 
     # won is False everywhere ⇒ no discordance ⇒ p=1.0
     assert cmp["mcnemar"]["won"]["p_value"] == 1.0
+
+
+# ------------------------------------------------------------------- fallback
+def _ev(reasoning: str, was_fallback: bool):
+    return {"step": 0, "ante": 1, "action": "NextRound", "reasoning": reasoning,
+            "was_fallback": was_fallback}
+
+
+def test_fallback_stats_counts_substitutions_and_isolates_errors():
+    """A policy that raises must be countable, and separable from benign fallbacks."""
+    runs = [
+        {"events": [_ev("GreedyShop", False), _ev("fallback-error:NameError", True)]},
+        {"events": [_ev("greedy-tactical", False), _ev("fallback-illegal", True),
+                    _ev("fallback-error:IndexError", True)]},
+        {"events": [_ev("greedy-tactical", False)]},
+    ]
+    fb = metrics.fallback_stats(runs)
+    assert fb["n_decisions"] == 6
+    assert fb["n_fallback"] == 3
+    assert abs(fb["rate"] - 0.5) < 1e-9
+    assert fb["runs_affected"] == 2
+    assert fb["n_runs"] == 3
+    # Only raised-inside-the-policy substitutions count as errors; illegal does not.
+    assert fb["errors"] == 2
+    assert fb["by_reason"] == {
+        "fallback-error:NameError": 1,
+        "fallback-illegal": 1,
+        "fallback-error:IndexError": 1,
+    }
+
+
+def test_fallback_stats_clean_battery_is_zero():
+    runs = [{"events": [_ev("GreedyShop", False), _ev("greedy-tactical", False)]}]
+    fb = metrics.fallback_stats(runs)
+    assert fb["n_fallback"] == 0
+    assert fb["rate"] == 0.0
+    assert fb["by_reason"] == {}
+
+
+def test_summarize_carries_the_fallback_block():
+    """The published artifact must not be able to hide a dead policy."""
+    runs = [
+        {
+            "meta": {"seed": "PVRQ4K5A", "config_label": "probe"},
+            "summary": {"highest_ante": 1, "won": False},
+            "events": [_ev("fallback-error:NameError", True)],
+        }
+    ]
+    summary = metrics.summarize(runs)
+    assert summary["fallback"]["errors"] == 1
+    assert summary["fallback"]["n_fallback"] == 1

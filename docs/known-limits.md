@@ -23,6 +23,12 @@
   distribute Balatro, its source, or its assets.
 - **Dataset selection:** a diagnostic manifest can answer a scoped coverage question but cannot be
   relabeled as ordinary-distribution policy strength. Sampling and overlap must be reported.
+- **Silent fallback substitution:** the harness answers any illegal or raising policy decision with
+  a legal fallback rather than failing the run, so a broken agent completes a battery and reports a
+  well-formed result. This is now counted and surfaced (`summary.fallback`, the `evaluate.py`
+  fallback line, and `!! FALLBACK` markers in `scripts/inspect_run.py`) rather than prevented — the
+  substitution still happens, and a partial rate still shifts a headline number by an amount the
+  artifact records but does not correct for.
 - **Artifact schema:** v1 validates the stable envelope and preserves the raw decision records by
   reference; it does not cryptographically sign results or fully validate every nested summary field.
 

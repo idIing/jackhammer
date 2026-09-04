@@ -36,3 +36,34 @@ def test_select_worst_then_render():
 def test_missing_seed_is_explicit():
     with pytest.raises(ValueError, match="not found"):
         inspect_run.select_run([_run("PVRQ4K5A", 3)], seed="4NNGD2DN", index=None, worst=False)
+
+
+def _broken_run(seed: str = "PVRQ4K5A"):
+    """A run whose shop policy raised on every shop decision."""
+    return {
+        "meta": {"seed": seed, "config_label": "priciest-shop"},
+        "summary": {"highest_ante": 1, "won": False, "final_money": 1},
+        "events": [
+            {"step": 0, "ante": 1, "action": "PlayHand", "score": 316,
+             "reasoning": "greedy-tactical", "was_fallback": False},
+            {"step": 1, "ante": 1, "action": "Reroll",
+             "reasoning": "fallback-error:NameError", "was_fallback": True},
+        ],
+    }
+
+
+def test_render_marks_substituted_decisions():
+    """The whole point: a dead policy must not render as a normal timeline."""
+    rendered = inspect_run.render(_broken_run())
+    assert "fallback=1/2 decisions" in rendered
+    assert "fallback-error:NameError=1" in rendered
+    assert "!! FALLBACK fallback-error:NameError" in rendered
+    assert "bug in the agent" in rendered
+    # Non-fallback decisions still carry their reasoning, unmarked.
+    assert "[greedy-tactical]" in rendered
+
+
+def test_render_says_so_when_nothing_was_substituted():
+    rendered = inspect_run.render(_run("PVRQ4K5A", 3))
+    assert "every decision came from the agent" in rendered
+    assert "FALLBACK" not in rendered

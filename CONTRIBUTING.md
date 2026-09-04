@@ -14,7 +14,8 @@ uv run ruff check src scripts tests
 uv run pytest
 ```
 
-Run a four-seed evaluator smoke after changing the agent or runner path:
+Run a four-seed evaluator smoke after changing the agent or runner path, and check that both
+arms report zero fallback substitutions:
 
 ```bash
 uv run python scripts/evaluate.py \
@@ -28,6 +29,12 @@ uv run python scripts/evaluate.py \
 - Compare against the closest existing baseline on identical seeds with `--vs`.
 - Report mean highest ante, the paired bootstrap interval, failures, engine commit, and dataset
   digest. Null and negative results are welcome.
+- **Report the fallback-substitution rate for every arm** (`summary.fallback` in the artifact, or
+  the `fallback substitutions:` line from `evaluate.py`). The harness replaces any illegal or
+  raising decision with a legal fallback, so a broken policy yields a complete and significant
+  result while never executing. A submission with a nonzero `fallback-error:*` or
+  `fallback-illegal` rate is not a measurement of the agent and will be sent back — see
+  [docs/adding-an-agent.md](docs/adding-an-agent.md).
 - Do not use an LLM as the gameplay policy or teacher. Supervised targets must come from measured
   outcomes, not model opinions.
 

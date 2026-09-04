@@ -1,12 +1,26 @@
 #!/usr/bin/env python
-"""Inspect one raw Jackhammer JSONL run without the Balatro client."""
+"""Inspect one raw Jackhammer JSONL run without the Balatro client.
+
+Shows what the agent actually decided, and — just as importantly — which
+decisions it did *not* make. ``build_decider`` substitutes a legal fallback for
+any slot output that is illegal or raises, so a broken policy yields a complete,
+normal-looking run. Every decision here is labelled with the reasoning the
+harness recorded, and substituted ones are marked, so that failure mode is
+visible to a reader instead of buried in the JSONL.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+
+from src.playground.metrics import fallback_stats  # noqa: E402
 
 
 def load_runs(path: Path) -> list[dict[str, Any]]:
@@ -33,6 +47,11 @@ def _ante(run: dict[str, Any]) -> int:
 
 def _seed(run: dict[str, Any]) -> str:
     return str((run.get("meta") or {}).get("seed", "?"))
+
+
+def _fallback(run: dict[str, Any]) -> dict[str, Any]:
+    """Fallback-substitution stats for a single run (shared with the artifact)."""
+    return fallback_stats([run])
 
 
 def select_run(
@@ -70,6 +89,7 @@ def render(run: dict[str, Any]) -> str:
     jokers = summary.get("final_jokers") or []
     if jokers:
         lines.append("jokers=" + ", ".join(map(str, jokers)))
+    lines.extend(_fallback_lines(_fallback(run)))
     lines.append("\ndecisions:")
     for event in run.get("events") or []:
         detail = []
@@ -77,11 +97,34 @@ def render(run: dict[str, Any]) -> str:
             if event.get(key) not in (None, ""):
                 detail.append(f"{key}={event[key]}")
         suffix = "  " + " ".join(detail) if detail else ""
+        reasoning = str(event.get("reasoning") or "?")
+        mark = "!! FALLBACK " if event.get("was_fallback") else ""
         lines.append(
             f"  {int(event.get('step', 0)):>3}  ante={event.get('ante', '?')}  "
-            f"{event.get('action', '?')}{suffix}"
+            f"{event.get('action', '?')}{suffix}  [{mark}{reasoning}]"
         )
     return "\n".join(lines)
+
+
+def _fallback_lines(fb: dict[str, Any]) -> list[str]:
+    """The substitution banner: silent when clean, explicit when not."""
+    n, total = fb["n_fallback"], fb["n_decisions"]
+    if not n:
+        return [f"fallback=0/{total} decisions -- every decision came from the agent"]
+    reasons = ", ".join(f"{k}={v}" for k, v in fb["by_reason"].items())
+    lines = [
+        f"fallback={n}/{total} decisions ({n / total:.1%})  {reasons}",
+        f"  !! {n} decision(s) were substituted by the harness, not chosen by the agent.",
+    ]
+    if fb["errors"]:
+        lines.append(
+            f"  !! {fb['errors']} of those raised inside the policy (fallback-error:*). "
+            "That is a bug in the agent;"
+        )
+        lines.append(
+            "     this run does not measure the agent, and no number derived from it is about it."
+        )
+    return lines
 
 
 def main() -> int:
@@ -98,7 +141,11 @@ def main() -> int:
         runs = load_runs(args.path)
         if args.list:
             for index, run in enumerate(runs):
-                print(f"{index:>4}  {_seed(run)}  ante={_ante(run)}")
+                fb = _fallback(run)
+                flag = ""
+                if fb["n_fallback"]:
+                    flag = f"  fallback={fb['n_fallback']}/{fb['n_decisions']}"
+                print(f"{index:>4}  {_seed(run)}  ante={_ante(run)}{flag}")
             return 0
         print(render(select_run(runs, seed=args.seed, index=args.index, worst=args.worst)))
         return 0

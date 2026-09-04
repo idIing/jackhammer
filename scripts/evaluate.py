@@ -127,6 +127,35 @@ def _run_agents(
     return {a: _merge(out_dir, a, seeds) for a in agent_names}, fails
 
 
+def _report_fallbacks(name: str, fb: dict) -> bool:
+    """Print an arm's fallback-substitution rate. True if the policy raised.
+
+    A "fail" in the progress output above means a *crashed game*. This is the
+    other failure: the game ran fine and the policy did not, because
+    ``build_decider`` catches every slot exception and substitutes a legal
+    action. Without this line a fully broken agent reports 0 fails and a
+    significant interval, so it is printed on every run, not only bad ones.
+    """
+    n, total = fb["n_fallback"], fb["n_decisions"]
+    if not n:
+        print(f"  fallback substitutions: 0 / {total} decisions", flush=True)
+        return False
+    reasons = ", ".join(f"{k}={v}" for k, v in fb["by_reason"].items())
+    print(
+        f"  fallback substitutions: {n} / {total} decisions ({n / total:.1%}) "
+        f"across {fb['runs_affected']}/{fb['n_runs']} runs -- {reasons}",
+        flush=True,
+    )
+    if fb["errors"]:
+        print(
+            f"  ERROR: {fb['errors']} decision(s) raised inside the {name} policy "
+            f"(fallback-error:*). Those decisions were made by the harness, not by "
+            f"{name}. Inspect with: scripts/inspect_run.py <runs.jsonl> --list",
+            flush=True,
+        )
+    return bool(fb["errors"])
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Evaluate a registered Jackhammer agent.")
     ap.add_argument("--list", action="store_true", help="list registered agents and exit")
@@ -207,6 +236,7 @@ def main() -> int:
 
     results: dict[str, dict] = {}
     runs: dict[str, list[dict]] = {}
+    suspect = False
     for name in agent_names:
         runs[name] = metrics.load_runs(str(paths[name]))
         results[name] = artifact.build_result(
@@ -219,6 +249,7 @@ def main() -> int:
         depth = results[name]["summary"]["run_depth"]
         print(f"\n{name}: {len(runs[name])} runs -> {written}", flush=True)
         print(f"  mean highest ante: {depth.get('mean'):.3f}", flush=True)
+        suspect |= _report_fallbacks(name, results[name]["summary"]["fallback"])
 
     if args.vs:
         comparison = artifact.build_comparison(
@@ -239,6 +270,15 @@ def main() -> int:
         excludes_zero = (lo > 0) or (hi < 0)
         print(f"  interval {'excludes' if excludes_zero else 'includes'} zero", flush=True)
         print(f"  -> {path}", flush=True)
+
+    if suspect:
+        print(
+            "\nWARNING: at least one arm's policy raised during the battery. The harness "
+            "substituted a legal fallback for those decisions, so the run completed and the "
+            "numbers above are well-formed -- but they are not measurements of that agent. "
+            "Fix the agent and re-run before reporting anything from it.",
+            flush=True,
+        )
 
     return 1 if fails else 0
 

@@ -13,7 +13,16 @@ One agent over one seed split. Required top-level fields:
   Python runtime;
 - `attributable`: true only when an exact clean engine commit is known;
 - `runs_path`: raw JSONL for drill-down; and
-- `summary`: run depth, blind statistics, win interval, and advance curve.
+- `summary`: run depth, blind statistics, win interval, advance curve, and `fallback`.
+
+`summary.fallback` (added in kit v1.1; additive, so v1 consumers are unaffected) is the audit that
+says the numbers beside it came from the agent and not from the harness. `build_decider` replaces
+any illegal or raising slot decision with a legal fallback so one bad state cannot kill a battery,
+which means a policy that never executes still produces a complete, significant result. The block
+carries `n_decisions`, `n_fallback`, `rate`, `runs_affected`, `n_runs`, `by_reason` (keyed by
+`fallback-error:<ExcType>` / `fallback-illegal` / `fallback-phase`), and `errors` — the
+`fallback-error:*` subtotal, which is always a defect in the agent. **Read it before reading
+`run_depth`:** a result with a nonzero `errors` is not a measurement of the named agent.
 
 ## `jackhammer.comparison/v1`
 
