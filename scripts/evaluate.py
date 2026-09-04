@@ -59,13 +59,15 @@ def _play_one(task: tuple[str, str, str]) -> dict:
     data: they are printed as they occur, omitted from the JSONL, and make the
     process exit nonzero.
     """
-    agent_name, seed, out_dir = task
+    agent_name, seed, out_dir, score_budget = task
     shard = _shard_path(Path(out_dir), agent_name, seed)
     shard.parent.mkdir(parents=True, exist_ok=True)
     if shard.exists():
         shard.unlink()  # idempotent re-run
     try:
         spec = agent_registry.get(agent_name)
+        if score_budget is not None:
+            spec = agent_registry.with_score_budget(spec, score_budget)
         res = run_battery_with(
             [seed],
             spec.make_decider,
@@ -97,10 +99,18 @@ def _merge(out_dir: Path, agent: str, seeds: list[str]) -> Path:
 
 
 def _run_agents(
-    agent_names: list[str], seeds: list[str], out_dir: Path, workers: int
+    agent_names: list[str],
+    seeds: list[str],
+    out_dir: Path,
+    workers: int,
+    score_budget: int | None = None,
 ) -> tuple[dict[str, Path], int]:
-    """Fan (agent x seed) games across a process pool. Returns paths and fail count."""
-    tasks = [(a, s, str(out_dir)) for a in agent_names for s in seeds]
+    """Fan (agent x seed) games across a process pool. Returns paths and fail count.
+
+    ``score_budget`` travels in the task tuple rather than module state so it
+    survives every pool start method, not just ``fork``.
+    """
+    tasks = [(a, s, str(out_dir), score_budget) for a in agent_names for s in seeds]
     print(
         f"evaluating: {len(seeds)} seeds x {len(agent_names)} agent(s) "
         f"= {len(tasks)} games on {workers} workers",
@@ -140,6 +150,16 @@ def main() -> int:
     ap.add_argument("--split", default="train", help="dataset split to evaluate")
     ap.add_argument("--limit", type=int, default=0, help="cap #seeds (smoke runs)")
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 2))
+    ap.add_argument(
+        "--score-budget",
+        type=int,
+        default=None,
+        help=(
+            "override the shared GreedyTactical scan cap (v1 uses "
+            f"{agent_registry.DEFAULT_SCORE_BUDGET}). Any other value is stamped as a "
+            "diagnostic sweep, never as a v1 result. See docs/known-limits.md."
+        ),
+    )
     ap.add_argument("--out-dir", default=str(REPO / "data" / "bench"))
     ap.add_argument(
         HOLDOUT_FLAG,
@@ -166,7 +186,12 @@ def main() -> int:
 
     agent_names = [args.agent] + ([args.vs] if args.vs else [])
     for name in agent_names:
-        agent_registry.get(name)  # fail fast on a typo, before running anything
+        spec = agent_registry.get(name)  # fail fast on a typo, before running anything
+        if args.score_budget is not None:
+            try:  # fail fast on an agent the flag cannot reach, before running anything
+                agent_registry.with_score_budget(spec, args.score_budget)
+            except ValueError as exc:
+                ap.error(str(exc))
 
     try:
         if args.dataset is None:
@@ -180,6 +205,21 @@ def main() -> int:
             dataset_path = dataset.path
             protocol = DATASET_PROTOCOL
             extra = dataset.provenance()
+        swept = (
+            args.score_budget is not None
+            and args.score_budget != agent_registry.DEFAULT_SCORE_BUDGET
+        )
+        if swept:
+            # A changed tactical cap makes this a sweep, not a benchmark run.
+            if protocol == provenance.PROTOCOL:
+                protocol = provenance.TACTICAL_PROTOCOL
+            extra = (extra or {}) | {
+                "tactical": {
+                    "score_budget": args.score_budget,
+                    "v1_score_budget": agent_registry.DEFAULT_SCORE_BUDGET,
+                    "scope": "diagnostic",
+                }
+            }
     except (FileNotFoundError, ValueError) as exc:
         ap.error(str(exc))
     if args.limit:
@@ -203,14 +243,28 @@ def main() -> int:
             flush=True,
         )
 
-    paths, fails = _run_agents(agent_names, seeds, out_dir, args.workers)
+    if swept:
+        print(
+            f"  DIAGNOSTIC: score_budget={args.score_budget} (v1 is "
+            f"{agent_registry.DEFAULT_SCORE_BUDGET}); stamped {protocol}, not a v1 result.",
+            flush=True,
+        )
+    paths, fails = _run_agents(
+        agent_names, seeds, out_dir, args.workers, score_budget=args.score_budget
+    )
 
     results: dict[str, dict] = {}
     runs: dict[str, list[dict]] = {}
     for name in agent_names:
         runs[name] = metrics.load_runs(str(paths[name]))
+        # The published identity must name the budget that actually ran, not the
+        # registry default -- an artifact claiming the v1 cap while a sweep produced
+        # it is the precise confusion --score-budget exists to prevent.
+        spec = agent_registry.get(name)
+        if swept:
+            spec = agent_registry.with_score_budget(spec, args.score_budget)
         results[name] = artifact.build_result(
-            spec=agent_registry.get(name),
+            spec=spec,
             runs=runs[name],
             provenance=prov,
             runs_path=_repo_rel(paths[name]),

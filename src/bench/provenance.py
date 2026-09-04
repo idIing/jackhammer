@@ -30,6 +30,10 @@ from typing import Any
 # Bump when the *meaning* of a stamped field changes, not when a value changes.
 PROTOCOL = "jackhammer/v1"
 
+# A run whose shared tactical budget is not the frozen v1 cap is not a v1 result.
+# Stamped separately so a sweep can never be mistaken for the benchmark number.
+TACTICAL_PROTOCOL = "jackhammer/tactical-sweep/v1"
+
 # provenance.py is src/bench/provenance.py -> parents[2] is the repo root.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENGINE_PATH = REPO_ROOT / "vendor" / "jackdaw-balatro"
