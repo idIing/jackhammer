@@ -34,7 +34,6 @@ from jackdaw.env import (  # noqa: E402
     ActionType,
     BalatroEnvironment,
     DirectAdapter,
-    FactoredAction,
     get_action_mask,
 )
 
@@ -176,18 +175,6 @@ def test_greedyshop_single_candidate_skips_ranking():
 # ---------------------------------------------------------------------------
 
 
-def _auto_action(raw, mask):
-    phase_u = str(raw.get("phase", "")).upper()
-    if "BLIND_SELECT" in phase_u and mask.type_mask[_SELECT_BLIND]:
-        return FactoredAction(action_type=_SELECT_BLIND)
-    if "ROUND_EVAL" in phase_u:
-        if mask.type_mask[_CASHOUT]:
-            return FactoredAction(action_type=_CASHOUT)
-        if mask.type_mask[_NEXT_ROUND]:
-            return FactoredAction(action_type=_NEXT_ROUND)
-    return None
-
-
 def test_real_game_non_mutation_and_legality():
     seed = load_battery("train")[0]
     # Invariants (non-mutation / legality) hold at any search depth; use a light
@@ -205,18 +192,17 @@ def test_real_game_non_mutation_and_legality():
     steps = 0
     rolled_once = False
     checked_shop = False
+    seen_phases: set[str] = set()
     while not done and steps < 60:
         raw = env._adapter.raw_state
         mask = get_action_mask(raw)
         steps += 1
 
-        auto = _auto_action(raw, mask)
-        if auto is not None:
-            _o, term, trunc, _m, _i = env.step(auto)
-            done = term or trunc
-            continue
-
+        # Every phase goes through decide_fn. Before protocol v2 this loop replicated
+        # the runner's auto-step here, so blind select and cash-out were never
+        # legality-checked at all -- the two phases the fix hands back to the agent.
         phase_u = str(raw.get("phase", "")).upper()
+        seen_phases.add(phase_u)
 
         # --- non-mutation probes on the LIVE state -------------------------
         fp = fingerprint(raw)
@@ -244,6 +230,8 @@ def test_real_game_non_mutation_and_legality():
     assert steps > 1
     assert checked_shop, "game never reached a SHOP — cannot exercise Slot 1"
     assert rolled_once, "RolloutValue non-mutation never probed"
+    assert any("BLIND_SELECT" in p for p in seen_phases), "BLIND_SELECT never reached decide_fn"
+    assert any("ROUND_EVAL" in p for p in seen_phases), "ROUND_EVAL never reached decide_fn"
 
 
 # ---------------------------------------------------------------------------

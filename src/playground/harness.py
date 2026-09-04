@@ -528,36 +528,60 @@ def build_decider(env, tactical: Tactical, shop: ShopPolicy, value: ValueEstimat
 
     Closes over ``env`` (the same object ``play_episode`` drives) so the slots get
     checkpoint access — ``decide_fn`` itself never receives ``env``. Dispatches by
-    phase, **legality-gates** every slot output (illegal -> legal fallback), and wraps
-    any slot exception into a legal fallback so one bad state can't crash the battery.
+    phase and **legality-gates** every slot output (illegal -> legal fallback).
+
+    The blind-select and cash-out branches are this composed agent's **own policy**,
+    not a harness convenience: it never skips a blind and never uses a consumable
+    before cashing out. That is a real strategic abstention and it is stamped into
+    every recorded decision as ``always-select-blind`` / ``always-cash-out``, so a
+    reader can see the choice was made rather than assume the phase did not exist.
+    Holding it fixed is also what keeps ``random-shop`` vs ``greedy-shop`` a clean
+    A/B: the two arms differ in the shop and nowhere else.
+
+    Exceptions are **not** caught here. ``scripts/evaluate.py``'s ``_play_one``
+    already isolates every game and reports failures as data, so a second net at
+    this level only converted a named crash into a silent legal move and a clean
+    exit code.
     """
 
     def decide_fn(raw_state, mask, history):
         phase_u = str(raw_state.get("phase", "")).upper()
-        try:
-            if "SELECTING_HAND" in phase_u:
-                fa = tactical.decide_play(env, raw_state, mask)
-                reasoning = "greedy-tactical"
-            elif "SHOP" in phase_u or "PACK_OPENING" in phase_u:
-                fa = shop.decide_shop(env, raw_state, mask, value)
-                reasoning = shop.name
-            else:
-                fa = get_fallback_action(mask)
-                reasoning = "fallback-phase"
-            legal, _ = is_action_legal(fa, mask)
-            if not legal:
-                fa = get_fallback_action(mask)
-                return _packet(fa, "fallback-illegal", was_fallback=True)
-            return _packet(fa, reasoning, was_fallback=(reasoning.startswith("fallback")))
-        except Exception as e:  # noqa: BLE001 — never crash a 300-seed battery
-            fa = get_fallback_action(mask)
-            return _packet(fa, f"fallback-error:{type(e).__name__}", was_fallback=True)
+        if "SELECTING_HAND" in phase_u:
+            fa = tactical.decide_play(env, raw_state, mask)
+            reasoning = "greedy-tactical"
+        elif "SHOP" in phase_u or "PACK_OPENING" in phase_u:
+            fa = shop.decide_shop(env, raw_state, mask, value)
+            reasoning = shop.name
+        elif "BLIND_SELECT" in phase_u and mask.type_mask[_SELECT_BLIND]:
+            fa = FactoredAction(action_type=_SELECT_BLIND)
+            reasoning = "always-select-blind"
+        elif "ROUND_EVAL" in phase_u and mask.type_mask[_CASHOUT]:
+            fa = FactoredAction(action_type=_CASHOUT)
+            reasoning = "always-cash-out"
+        else:
+            # No phase left that the engine offers an action in; a genuine gap.
+            return _packet(get_fallback_action(mask), "fallback-phase", was_fallback=True)
+        legal, _ = is_action_legal(fa, mask)
+        if not legal:
+            return _packet(get_fallback_action(mask), "fallback-illegal", was_fallback=True)
+        return _packet(fa, reasoning, was_fallback=False)
 
     return decide_fn
 
 
 def _packet(fa: FactoredAction, reasoning: str, was_fallback: bool):
-    """Build the 5-tuple ``play_episode`` expects from a chosen action."""
+    """Build the 5-tuple ``play_episode`` expects from a chosen action.
+
+    ``was_fallback`` is passed explicitly by the caller and means exactly one thing:
+    *this composer substituted for a slot*. It was previously derived as
+    ``reasoning.startswith("fallback")`` over the slot's own name, which made the
+    flag a property of a string rather than of what happened.
+
+    It still cannot see a slot that calls :func:`get_fallback_action` itself — such a
+    policy returns an ordinary action and is recorded as having decided. Reading this
+    flag as "the agent had no opinion" is therefore wrong in a way no counter here can
+    detect; it is a lower bound on abstention, not a measure of it.
+    """
     method = ACTION_NAMES.get(int(fa.action_type), str(int(fa.action_type)))
     return fa, reasoning, method, {}, bool(was_fallback)
 

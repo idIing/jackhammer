@@ -44,6 +44,38 @@ use `env.get_state()` / `env.load_state()` but must restore the environment befo
 Randomized policies must derive their random generator from `seed`. If exact repeated replay is not
 expected, set `deterministic=False`; do not publish it as reproducible.
 
+### Your decider is called for every phase
+
+**Changed in protocol v2.** The episode loop holds no policy of its own, so `decide` is called for
+every phase the engine offers an action in — including `BLIND_SELECT` and `ROUND_EVAL`, which the v1
+loop played on the agent's behalf. An agent ported from v1 that only handles `SELECTING_HAND` and
+`SHOP` will now be asked something it has no branch for.
+
+The two phases carry real decisions. `SkipBlind` is legal on Small and Big blinds only; it takes a
+tag and advances to the next blind. A consumable used at `ROUND_EVAL` frees its key before the next
+shop is rolled, so it can change what the shop offers — one step later, in the shop, is too late.
+
+If you do not want to make those decisions, decline them explicitly, the way the shop baselines do:
+
+```python
+_SELECT_BLIND = int(ActionType.SelectBlind)
+_CASHOUT = int(ActionType.CashOut)
+
+phase = str(raw_state.get("phase", "")).upper()
+if "BLIND_SELECT" in phase and mask.type_mask[_SELECT_BLIND]:
+    return FactoredAction(action_type=_SELECT_BLIND), "always-select-blind", "SelectBlind", {}, False
+if "ROUND_EVAL" in phase and mask.type_mask[_CASHOUT]:
+    return FactoredAction(action_type=_CASHOUT), "always-cash-out", "CashOut", {}, False
+```
+
+Declining is a legitimate policy and costs nothing measurable on the current slate. Say so in your
+`description`: the string is stamped into every artifact you publish, and a description that claims
+a broader action set than the agent uses is the exact defect v2 exists to fix.
+
+Leave `was_fallback` false for decisions your policy actually made. It means "the harness
+substituted for the agent", not "the agent had no preference" — a policy that internally reaches for
+a default still returns an ordinary action and is recorded as having decided.
+
 ## The shared tactical layer
 
 The two shop baselines are not written from scratch. Both compose

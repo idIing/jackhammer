@@ -1,8 +1,18 @@
 """Shared episode loop for self-play.
 
-Auto-plays the deterministic transitions (blind select, cash-out / next-round)
-and delegates decision phases to a pluggable ``decide_fn``. A ``RunRecorder`` hook
-turns every decision into a recorded event.
+Delegates **every** phase the engine offers an action in to a pluggable
+``decide_fn``. A ``RunRecorder`` hook turns every decision into a recorded event.
+
+The loop deliberately holds no policy of its own. Until protocol v2 it auto-played
+blind select and cash-out, described here as "the deterministic transitions" — which
+was wrong twice over. Blind select is not deterministic: ``SkipBlind`` is legal on
+every Small and Big blind (``jackdaw/env/action_space.py``), takes a tag, and fires
+every joker's ``skip_blind`` trigger. Cash-out is not either: a consumable used at
+``ROUND_EVAL`` frees its key before the shop pool is rolled, and using it one step
+later in the shop is too late. Both were a scope choice from an era that asked how
+strong an agent is; recorded as a property of the game, it outlived its reason and
+silently censored the agent's move pool. An agent that wants those phases played for
+it must say so in its own policy, where the artifact will record that it did.
 """
 
 from __future__ import annotations
@@ -20,8 +30,6 @@ from src.selfplay.recorder import ACTION_NAMES, RunMeta, RunRecorder
 
 # decide_fn(raw_state, mask, history) -> (factored, reasoning, method, params, was_fallback)
 DecideFn = Callable[[dict, Any, list], tuple]
-
-_SELECT_BLIND, _CASHOUT, _NEXT_ROUND = 2, 4, 6
 
 
 @dataclass
@@ -104,21 +112,6 @@ def play_episode(
         step_count += 1
         raw_state = info["raw_state"]
         last_raw = raw_state
-        phase_u = str(raw_state.get("phase", "")).upper()
-
-        auto = None
-        if "BLIND_SELECT" in phase_u and mask.type_mask[_SELECT_BLIND]:
-            auto = FactoredAction(action_type=_SELECT_BLIND)
-        elif "ROUND_EVAL" in phase_u:
-            if mask.type_mask[_CASHOUT]:
-                auto = FactoredAction(action_type=_CASHOUT)
-            elif mask.type_mask[_NEXT_ROUND]:
-                auto = FactoredAction(action_type=_NEXT_ROUND)
-        if auto is not None:
-            _obs, terminated, truncated, mask, info = env.step(auto)
-            done = terminated or truncated
-            last_raw = info["raw_state"]
-            continue
 
         if len(raw_state.get("jokers", []) or []) > 0:
             bought_joker = True
