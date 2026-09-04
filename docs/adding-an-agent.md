@@ -49,8 +49,11 @@ expected, set `deterministic=False`; do not publish it as reproducible.
 The two shop baselines are not written from scratch. Both compose
 `build_decider(env, GreedyTactical(), <shop policy>, MarginValue())`, where `GreedyTactical`
 (`src/playground/harness.py`) is a fixed in-blind policy: it exact-scores up to `score_budget=300`
-legal play-card subsets, then clinches or digs. Holding it constant is what lets a paired
-comparison attribute a difference to the shop policy alone.
+legal play-card subsets, then clinches or digs. Holding it constant is what makes a paired
+comparison a shop-policy contrast — imperfectly, though: the 300-subset cap binds more often on
+`greedy-shop`, worth about 0.1 ante, so a margin measured against it carries that handicap on the
+affected seeds. `--score-budget` re-runs either baseline at another cap if you want to size that
+against your own agent. See [known limits](known-limits.md).
 
 You are free to replace it — an agent that plays cards better is a legitimate submission — but say
 so, because a comparison against `greedy-shop` then measures both layers at once, not just the
