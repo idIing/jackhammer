@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import random
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from src.playground.harness import (
@@ -154,13 +154,22 @@ def all_specs() -> list[AgentSpec]:
 # real strategy, not absent mechanics -- SkipBlind is legal on every Small and Big
 # blind and takes a tag, and a consumable used at ROUND_EVAL is freed from the pool
 # before the next shop is rolled. Holding both fixed is deliberate: it is what keeps
-# the paired difference between these two arms a measurement of the shop policy and
-# nothing else. random-legal declares no such abstention and exercises both.
+# the paired difference between these two arms a shop-policy contrast rather than two
+# different players (the shared tactical layer is not a perfectly symmetric control --
+# docs/known-limits.md sizes what its scan cap costs). random-legal declares no such
+# abstention and exercises both.
 
 
 # Both shop baselines construct GreedyTactical() with its default budget; the label
 # records that so a result artifact names the policy that played every hand.
-_TACTICAL_LABEL = f"GreedyTactical(score_budget={GreedyTactical().score_budget})"
+DEFAULT_SCORE_BUDGET = GreedyTactical().score_budget
+
+
+def _tactical_label(score_budget: int = DEFAULT_SCORE_BUDGET) -> str:
+    return f"GreedyTactical(score_budget={score_budget})"
+
+
+_TACTICAL_LABEL = _tactical_label()
 
 
 register(
@@ -177,11 +186,38 @@ register(
 )
 
 
-def _random_shop_decider(env, seed: str):
-    # RandomShop's RNG is seeded from the *game* seed, so the value-blind arm is
-    # as reproducible as the deterministic one. This mirrors the original
-    # baseline runner and is why `deterministic=True` below is honest.
-    return build_decider(env, GreedyTactical(), RandomShop(random.Random(seed)), MarginValue())
+def _random_shop_at(score_budget: int):
+    def _random_shop_decider(env, seed: str):
+        # RandomShop's RNG is seeded from the *game* seed, so the value-blind arm is
+        # as reproducible as the deterministic one. This mirrors the original
+        # baseline runner and is why `deterministic=True` below is honest.
+        return build_decider(
+            env,
+            GreedyTactical(score_budget=score_budget),
+            RandomShop(random.Random(seed)),
+            MarginValue(),
+        )
+
+    return _random_shop_decider
+
+
+def _greedy_shop_at(score_budget: int):
+    def _greedy_shop_decider(env, _seed: str):
+        return build_decider(
+            env, GreedyTactical(score_budget=score_budget), GreedyShop(), MarginValue()
+        )
+
+    return _greedy_shop_decider
+
+
+# Agents whose in-blind budget `evaluate.py --score-budget` can vary. Only the two
+# shop baselines qualify: they share one GreedyTactical whose cap is the thing under
+# test. A submitted agent constructs its own tactical layer, so the flag cannot reach
+# it -- `with_score_budget` says so rather than silently doing nothing.
+_BUDGET_VARIANTS = {"random-shop": _random_shop_at, "greedy-shop": _greedy_shop_at}
+
+
+_random_shop_decider = _random_shop_at(DEFAULT_SCORE_BUDGET)
 
 
 register(
@@ -205,11 +241,39 @@ register(
             "Buys the cheapest affordable joker; fixed greedy tactics; "
             "never skips a blind, never uses a consumable before cash-out."
         ),
-        make_decider=lambda env, _seed: build_decider(
-            env, GreedyTactical(), GreedyShop(), MarginValue()
-        ),
+        make_decider=_greedy_shop_at(DEFAULT_SCORE_BUDGET),
         slot1=GreedyShop.name,
         slot2=MarginValue.name,
         tactical=_TACTICAL_LABEL,
     )
 )
+
+
+def with_score_budget(spec: AgentSpec, score_budget: int) -> AgentSpec:
+    """A copy of *spec* whose shared ``GreedyTactical`` uses *score_budget*.
+
+    Exists so the scan-cap limitation in ``docs/known-limits.md`` is reproducible
+    from the CLI instead of by editing this file. The returned spec keeps the
+    agent's name -- it is the same shop policy -- but its ``tactical`` label
+    records the budget actually used, so a result artifact can never claim the
+    frozen cap while running another. ``evaluate.py`` additionally stamps any
+    non-default budget as a diagnostic protocol.
+
+    Raises:
+        ValueError: if *spec* has no tunable tactical layer. ``random-legal`` has
+            none, and a submitted agent builds its own, so silently returning it
+            unchanged would let a sweep report a budget it never applied.
+    """
+    if score_budget < 1:
+        raise ValueError(f"score_budget must be >= 1, got {score_budget}")
+    factory = _BUDGET_VARIANTS.get(spec.name)
+    if factory is None:
+        raise ValueError(
+            f"agent {spec.name!r} has no tunable tactical layer, so --score-budget "
+            f"cannot apply to it; it is settable for: {', '.join(sorted(_BUDGET_VARIANTS))}"
+        )
+    return replace(
+        spec,
+        make_decider=factory(score_budget),
+        tactical=_tactical_label(score_budget),
+    )

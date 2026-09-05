@@ -41,12 +41,13 @@ every play decision it exact-scores up to 300 legal card subsets, plays the best
 clears the blind, and otherwise discards to dig for a better one.
 
 Holding it fixed is the point — it plays every hand both agents play, so the paired difference
-between them measures the shop policy and nothing else. `random-legal` does not use it at all,
-which is what makes it an honest floor rather than a third variation on the same player.
+between them is a shop-policy contrast, not two different card players. `random-legal` does not use
+it at all, which is what makes it an honest floor rather than a third variation on the same player.
 
 The 300 cap is exhaustive for a standard 8-card hand, where the complete set of ≤5-card subsets is
-218. Above 8 cards it truncates, and it drops the largest subsets first — see
-[known limits](docs/known-limits.md).
+218. Above 8 cards it truncates, and it drops the largest subsets first. It also does not bind
+equally on the two arms: shopping grows the hand, so `greedy-shop` truncates ~2.4x as often, and the
+`+1.567` understates the contrast by about 0.1 ante — see [known limits](docs/known-limits.md).
 
 This ladder is intentionally weak. `greedy-shop` does not understand Joker text, quality, rarity,
 or synergy; it never rerolls or sells and it does not buy vouchers or consumables. That gap is an
