@@ -146,6 +146,16 @@ def all_specs() -> list[AgentSpec]:
 # that is what makes them a clean A/B. Neither is a floor, though, because both
 # play cards with the same greedy tactics -- which is what random-legal is for.
 # Without a floor, "N times better than random" has no referent.
+#
+# On blind selection and cash-out, changed in protocol v2: both shop baselines
+# always select the blind and always cash out immediately. Under v1 the episode
+# loop did that for them and no agent could do otherwise; it is now each agent's
+# own declared policy, recorded per decision. The two abstentions it declares are
+# real strategy, not absent mechanics -- SkipBlind is legal on every Small and Big
+# blind and takes a tag, and a consumable used at ROUND_EVAL is freed from the pool
+# before the next shop is rolled. Holding both fixed is deliberate: it is what keeps
+# the paired difference between these two arms a measurement of the shop policy and
+# nothing else. random-legal declares no such abstention and exercises both.
 
 
 # Both shop baselines construct GreedyTactical() with its default budget; the label
@@ -156,7 +166,10 @@ _TACTICAL_LABEL = f"GreedyTactical(score_budget={GreedyTactical().score_budget})
 register(
     AgentSpec(
         name="random-legal",
-        description="Uniformly-random legal action everywhere. The floor.",
+        description=(
+            "Uniformly-random legal action in every phase, including skipping blinds "
+            "and using consumables before cash-out. The floor."
+        ),
         make_decider=lambda env, seed: random_decider(random.Random(seed)),
         slot1="random_decider",
         slot2="",
@@ -174,7 +187,10 @@ def _random_shop_decider(env, seed: str):
 register(
     AgentSpec(
         name="random-shop",
-        description="Uniformly-random legal shop action; fixed greedy tactics.",
+        description=(
+            "Uniformly-random legal shop action; fixed greedy tactics; "
+            "never skips a blind, never uses a consumable before cash-out."
+        ),
         make_decider=_random_shop_decider,
         slot1=RandomShop.name,
         slot2=MarginValue.name,
@@ -185,7 +201,10 @@ register(
 register(
     AgentSpec(
         name="greedy-shop",
-        description="Buys the cheapest affordable joker; fixed greedy tactics.",
+        description=(
+            "Buys the cheapest affordable joker; fixed greedy tactics; "
+            "never skips a blind, never uses a consumable before cash-out."
+        ),
         make_decider=lambda env, _seed: build_decider(
             env, GreedyTactical(), GreedyShop(), MarginValue()
         ),

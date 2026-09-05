@@ -1,4 +1,11 @@
-# Benchmark protocol v1
+# Benchmark protocol v1 (superseded)
+
+> **Superseded on 2026-09-04 by [protocol v2](protocol-v2.md).** Kept published so artifacts
+> stamped `jackhammer/v1` stay interpretable. Under v1 the episode loop selected the blind and
+> cashed out on the agent's behalf, so **no v1 agent could skip a blind or use a consumable before
+> the shop was rolled** — including `random-legal`, whose description below claims otherwise. On the
+> three baselines this changed no number (v2 § What changed), but it is not a property v1 artifacts
+> can be assumed to share with later ones.
 
 Status: frozen on 2026-09-02. Changing a numbered item creates v2 rather than silently editing v1.
 
