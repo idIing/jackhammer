@@ -56,10 +56,14 @@ of buying Jokers and surviving longer, so `greedy-shop` meets the cap more often
 what splits the arms: they are bit-identical through the ante-1 Small blind in 240/240 seeds, and
 the first differing action is a shop decision in 232/240, never a tactical one.
 
-**What it costs.** Re-run the battery yourself at a raised cap:
+**What it costs.** Re-run the battery yourself at a raised cap. Send it somewhere other than
+`data/bench/`: `--out-dir` defaults there, which is also where the README's baseline run lands, and
+a sweep left to that default silently overwrites it — including the records the next paragraph asks
+you to inspect.
 
 ```
-uv run python scripts/evaluate.py --agent greedy-shop --vs random-shop --score-budget 8000
+uv run python scripts/evaluate.py --agent greedy-shop --vs random-shop \
+    --score-budget 8000 --out-dir data/sweeps/budget-8000
 ```
 
 Any budget other than the frozen `300` is stamped `jackhammer/tactical-sweep/v1` with
@@ -77,9 +81,14 @@ subset at all — so every play the layer can reach scores exactly zero, and the
 for as long as the hand stays that large. It bit on 2 of 45 `greedy-shop` Psychic blinds and 0 of 26
 for `random-shop`: seeds `657P5QGW` (Troubadour, +2) and `PM4RVISW` (Turtle Bean, +5) both scored
 0/600 and lost at ante 1, and both clear 720/600 and reach ante 3 and ante 4 at the raised cap. The
-lockups are in the published records —
-`uv run python scripts/inspect_run.py data/bench/greedy-shop.jsonl --seed 657P5QGW` prints three
-`High Card score=0` plays.
+lockups are visible in the decision records — run the README's baseline evaluation first (this
+repository ships no `data/`; every artifact is reproduced locally), then:
+
+```
+uv run python scripts/inspect_run.py data/bench/greedy-shop.jsonl --seed 657P5QGW
+```
+
+which prints three `High Card score=0` plays.
 
 **Why the frozen protocol keeps it.** Raising the cap moves published numbers, so it is a question
 for the next protocol version — v3 — and not a patch to the current one. The outcome plateaus at `score_budget=2000` (mean highest ante 3.308, unchanged at 4000, 8000

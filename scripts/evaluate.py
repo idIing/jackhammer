@@ -155,9 +155,9 @@ def main() -> int:
         type=int,
         default=None,
         help=(
-            "override the shared GreedyTactical scan cap (v1 uses "
+            "override the shared GreedyTactical scan cap (the frozen protocol uses "
             f"{agent_registry.DEFAULT_SCORE_BUDGET}). Any other value is stamped as a "
-            "diagnostic sweep, never as a v1 result. See docs/known-limits.md."
+            "diagnostic sweep, never as a benchmark result. See docs/known-limits.md."
         ),
     )
     ap.add_argument("--out-dir", default=str(REPO / "data" / "bench"))
@@ -216,7 +216,7 @@ def main() -> int:
             extra = (extra or {}) | {
                 "tactical": {
                     "score_budget": args.score_budget,
-                    "v1_score_budget": agent_registry.DEFAULT_SCORE_BUDGET,
+                    "frozen_score_budget": agent_registry.DEFAULT_SCORE_BUDGET,
                     "scope": "diagnostic",
                 }
             }
@@ -245,8 +245,9 @@ def main() -> int:
 
     if swept:
         print(
-            f"  DIAGNOSTIC: score_budget={args.score_budget} (v1 is "
-            f"{agent_registry.DEFAULT_SCORE_BUDGET}); stamped {protocol}, not a v1 result.",
+            f"  DIAGNOSTIC: score_budget={args.score_budget} (frozen cap is "
+            f"{agent_registry.DEFAULT_SCORE_BUDGET}); stamped {protocol}, not a "
+            f"{provenance.PROTOCOL} result.",
             flush=True,
         )
     paths, fails = _run_agents(
@@ -258,8 +259,8 @@ def main() -> int:
     for name in agent_names:
         runs[name] = metrics.load_runs(str(paths[name]))
         # The published identity must name the budget that actually ran, not the
-        # registry default -- an artifact claiming the v1 cap while a sweep produced
-        # it is the precise confusion --score-budget exists to prevent.
+        # registry default -- an artifact claiming the frozen cap while a sweep
+        # produced it is the precise confusion --score-budget exists to prevent.
         spec = agent_registry.get(name)
         if swept:
             spec = agent_registry.with_score_budget(spec, args.score_budget)

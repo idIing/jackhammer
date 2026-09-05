@@ -154,8 +154,10 @@ def all_specs() -> list[AgentSpec]:
 # real strategy, not absent mechanics -- SkipBlind is legal on every Small and Big
 # blind and takes a tag, and a consumable used at ROUND_EVAL is freed from the pool
 # before the next shop is rolled. Holding both fixed is deliberate: it is what keeps
-# the paired difference between these two arms a measurement of the shop policy and
-# nothing else. random-legal declares no such abstention and exercises both.
+# the paired difference between these two arms a shop-policy contrast rather than two
+# different players (the shared tactical layer is not a perfectly symmetric control --
+# docs/known-limits.md sizes what its scan cap costs). random-legal declares no such
+# abstention and exercises both.
 
 
 # Both shop baselines construct GreedyTactical() with its default budget; the label
@@ -254,7 +256,7 @@ def with_score_budget(spec: AgentSpec, score_budget: int) -> AgentSpec:
     from the CLI instead of by editing this file. The returned spec keeps the
     agent's name -- it is the same shop policy -- but its ``tactical`` label
     records the budget actually used, so a result artifact can never claim the
-    v1 cap while running another. ``evaluate.py`` additionally stamps any
+    frozen cap while running another. ``evaluate.py`` additionally stamps any
     non-default budget as a diagnostic protocol.
 
     Raises:

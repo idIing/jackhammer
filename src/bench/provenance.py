@@ -35,7 +35,7 @@ from typing import Any
 # v1 and v2 artifacts are not comparable; see docs/protocol-v2.md § What changed.
 PROTOCOL = "jackhammer/v2"
 
-# A run whose shared tactical budget is not the frozen v1 cap is not a v1 result.
+# A run whose shared tactical budget is not the frozen cap is not a benchmark result.
 # Stamped separately so a sweep can never be mistaken for the benchmark number.
 TACTICAL_PROTOCOL = "jackhammer/tactical-sweep/v1"
 
@@ -152,8 +152,9 @@ def stamp(
         n_seeds: how many seeds were actually evaluated — may be below the split
             size when ``--limit`` was used for a smoke run, which is exactly the
             case a reader must be able to detect.
-        protocol: evaluation contract identifier. The default is frozen benchmark
-            v1; diagnostic datasets use their own identifier.
+        protocol: evaluation contract identifier. The default is the frozen
+            benchmark protocol (``PROTOCOL``); diagnostic datasets and tactical
+            sweeps use their own identifiers.
         extra: additional caller-supplied fields, merged at the top level.
 
     Returns:
