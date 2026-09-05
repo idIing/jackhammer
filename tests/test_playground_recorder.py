@@ -13,14 +13,9 @@ Run with: ``uv run python -m pytest tests/test_playground_recorder.py``
 """
 
 import json
-import os
-import sys
 from types import SimpleNamespace
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, PROJECT_ROOT)
-
-from src.selfplay.recorder import RunMeta, RunRecorder  # noqa: E402
+from jackhammer.selfplay.recorder import RunMeta, RunRecorder
 
 _BLIND_KEYS = {
     "ante",
@@ -240,7 +235,7 @@ def test_real_short_games_produce_well_formed_blinds(tmp_path):
 
     from jackdaw.env import BalatroEnvironment, DirectAdapter
 
-    from src.selfplay.runner import play_episode, random_decider
+    from jackhammer.selfplay.runner import play_episode, random_decider
 
     out = tmp_path / "runs.jsonl"
     seen_any = False

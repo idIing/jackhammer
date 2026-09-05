@@ -26,7 +26,7 @@ from typing import Any
 import numpy as np
 from jackdaw.env import FactoredAction
 
-from src.selfplay.recorder import ACTION_NAMES, RunMeta, RunRecorder
+from jackhammer.selfplay.recorder import ACTION_NAMES, RunMeta, RunRecorder
 
 # decide_fn(raw_state, mask, history) -> (factored, reasoning, method, params, was_fallback)
 DecideFn = Callable[[dict, Any, list], tuple]

@@ -64,8 +64,8 @@ dependencies = [
 
 [[package]]
 name = "jackhammer-benchmark"
-version = "0.1.0"
-source = { virtual = "." }
+version = "1.0.0"
+source = { editable = "." }
 dependencies = [
     { name = "jackdaw" },
     { name = "numpy" },

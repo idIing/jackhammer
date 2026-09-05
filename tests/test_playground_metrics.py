@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from src.playground import metrics
+from jackhammer.playground import metrics
 
 
 # --------------------------------------------------------------------- wilson

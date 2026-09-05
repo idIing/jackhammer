@@ -23,9 +23,20 @@ ALPHABET = "123456789ABCDEFGHIJKLMNPQRSTUVWXYZ"  # 34 chars: 1-9, A-N, P-Z (no 0
 SEED_LENGTH = 8
 _ALPHABET_SET = frozenset(ALPHABET)
 
-# Repo-relative path to the committed bank. seeds.py is src/playground/seeds.py, so
-# parents[2] is the repo root.
-BATTERY_PATH = Path(__file__).resolve().parents[2] / "config" / "seed_battery_v1.json"
+# The frozen bank reaches you two ways. In a checkout it sits at the repo root, which
+# is the path protocol v2 § 2 names and every published artifact stamps. A wheel has no
+# repo above it, so the build copies the same file to <package>/config/ (pyproject,
+# [tool.hatch.build.targets.wheel.force-include]) -- without it `pip install jackhammer`
+# yields a kit that cannot load its own battery.
+#
+# Package copy first: it is the only location that exists in both layouts, and both
+# resolve to the stamped string `config/seed_battery_v1.json` (see provenance.stamp),
+# so an artifact does not record which way the kit was installed.
+_PACKAGE_ROOT = Path(__file__).resolve().parents[1]  # .../jackhammer
+_PACKAGED_BATTERY = _PACKAGE_ROOT / "config" / "seed_battery_v1.json"
+# <repo>/src/jackhammer -> <repo>
+_CHECKOUT_BATTERY = _PACKAGE_ROOT.parents[1] / "config" / "seed_battery_v1.json"
+BATTERY_PATH = _PACKAGED_BATTERY if _PACKAGED_BATTERY.exists() else _CHECKOUT_BATTERY
 
 _VALID_SPLITS = ("train", "val", "all")
 

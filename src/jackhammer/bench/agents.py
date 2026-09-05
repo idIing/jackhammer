@@ -12,7 +12,7 @@ learned policy registers here on equal footing with the baselines below.
 
 Registering an agent::
 
-    from src.bench.agents import AgentSpec, register
+    from jackhammer.bench.agents import AgentSpec, register
 
     register(AgentSpec(
         name="my-agent",
@@ -28,14 +28,14 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from src.playground.harness import (
+from jackhammer.playground.harness import (
     GreedyShop,
     GreedyTactical,
     MarginValue,
     RandomShop,
     build_decider,
 )
-from src.selfplay.runner import random_decider
+from jackhammer.selfplay.runner import random_decider
 
 
 @dataclass(frozen=True)

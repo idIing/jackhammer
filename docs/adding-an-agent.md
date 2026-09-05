@@ -1,9 +1,9 @@
 # Adding an agent
 
-An agent is registered with `src.bench.agents.AgentSpec`:
+An agent is registered with `jackhammer.bench.agents.AgentSpec`:
 
 ```python
-from src.bench.agents import AgentSpec, register
+from jackhammer.bench.agents import AgentSpec, register
 
 
 def make_decider(env, seed):
@@ -26,7 +26,7 @@ register(
 )
 ```
 
-Place the implementation in `src/bench/agents.py` for a small baseline, or import and register it
+Place the implementation in `src/jackhammer/bench/agents.py` for a small baseline, or import and register it
 there from a separate module. Registration happens when the evaluator imports the registry.
 
 ## Decider contract
@@ -80,7 +80,7 @@ a default still returns an ordinary action and is recorded as having decided.
 
 The two shop baselines are not written from scratch. Both compose
 `build_decider(env, GreedyTactical(), <shop policy>, MarginValue())`, where `GreedyTactical`
-(`src/playground/harness.py`) is a fixed in-blind policy: it exact-scores up to `score_budget=300`
+(`src/jackhammer/playground/harness.py`) is a fixed in-blind policy: it exact-scores up to `score_budget=300`
 legal play-card subsets, then clinches or digs. Holding it constant is what makes a paired
 comparison a shop-policy contrast — imperfectly, though: the 300-subset cap binds more often on
 `greedy-shop`, worth about 0.1 ante, so a margin measured against it carries that handicap on the

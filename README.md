@@ -36,7 +36,7 @@ Random Shop -> Cheapest-Joker Shop difference is +1.567 ante with a bootstrap-95
 ### The shared card play: `GreedyTactical`
 
 **`random-shop` and `greedy-shop` both play their cards with `GreedyTactical`**
-(`src/playground/harness.py`) and differ only in what they do in the shop. In one sentence: on
+(`src/jackhammer/playground/harness.py`) and differ only in what they do in the shop. In one sentence: on
 every play decision it exact-scores up to 300 legal card subsets, plays the best hand if that
 clears the blind, and otherwise discards to dig for a better one.
 
@@ -64,6 +64,27 @@ cd jackhammer
 uv sync --locked
 uv run python scripts/evaluate.py --list
 ```
+
+To use the kit as a library from your own project instead, install it — the frozen seed battery and
+the pinned simulator commit come with it, so a benchmark run from an install is attributable:
+
+```bash
+pip install "jackhammer-benchmark @ git+https://github.com/idIing/jackhammer.git@v1.0.0"
+```
+
+```python
+from jackhammer.bench import agents, provenance
+from jackhammer.playground.harness import run_battery_with
+from jackhammer.playground.seeds import load_battery
+
+spec = agents.get("greedy-shop")
+results = run_battery_with(load_battery("train")[:8], spec.make_decider, out_path="runs.jsonl",
+                           config_label=spec.name, slot1=spec.slot1, slot2=spec.slot2)
+print(provenance.kit_pin())   # {'version': '1.0.0', 'commit': None, 'dirty': None}
+```
+
+`scripts/` is not installed; the CLI below runs from a clone. An installed copy reports
+`kit.commit: null` because it has no checkout — `kit.version` is the field that identifies it.
 
 Expected list output:
 
