@@ -14,13 +14,13 @@ import json
 import pytest
 from jackdaw.env import BalatroEnvironment, DirectAdapter
 
-from src.playground.seeds import (
+from jackhammer.playground.seeds import (
     ALPHABET,
     SEED_LENGTH,
     _read_battery,
     load_battery,
 )
-from src.selfplay.determinism import fingerprint
+from jackhammer.selfplay.determinism import fingerprint
 
 
 def _good_battery() -> dict:

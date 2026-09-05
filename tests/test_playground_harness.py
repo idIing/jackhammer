@@ -1,4 +1,4 @@
-"""Tests for the two-slot playground harness (``src/playground/harness.py``).
+"""Tests for the two-slot playground harness (``src/jackhammer/playground/harness.py``).
 
 Covers the load-bearing invariants:
 
@@ -19,25 +19,19 @@ Run with: ``uv run --no-sync python -m pytest tests/test_playground_harness.py -
 
 import copy
 import json
-import os
 import random
-import sys
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
-
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, PROJECT_ROOT)
-
-from jackdaw.env import (  # noqa: E402
+from jackdaw.env import (
     ActionType,
     BalatroEnvironment,
     DirectAdapter,
     get_action_mask,
 )
 
-from src.playground.harness import (  # noqa: E402
+from jackhammer.playground.harness import (
     GreedyShop,
     GreedyTactical,
     MarginValue,
@@ -49,9 +43,9 @@ from src.playground.harness import (  # noqa: E402
     build_decider,
     run_battery,
 )
-from src.playground.seeds import load_battery  # noqa: E402
-from src.selfplay.decision import is_action_legal  # noqa: E402
-from src.selfplay.determinism import fingerprint  # noqa: E402
+from jackhammer.playground.seeds import load_battery
+from jackhammer.selfplay.decision import is_action_legal
+from jackhammer.selfplay.determinism import fingerprint
 
 _SELECT_BLIND = int(ActionType.SelectBlind)
 _CASHOUT = int(ActionType.CashOut)

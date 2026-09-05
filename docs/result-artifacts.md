@@ -10,7 +10,9 @@ One agent over one seed split. Required top-level fields:
   `deterministic`, the `slot1`/`slot2` provenance labels, and `tactical`, which names the
   in-blind play policy (the baselines record `GreedyTactical(score_budget=300)`);
 - `provenance`: protocol, seed file path/digest/split/count, engine pin and dirty state, kit pin, and
-  Python runtime;
+  Python runtime. The kit pin is `{version, commit, dirty}`: `version` is the installed release
+  (`1.0.0` and up), `commit` resolves the exact tree and is `null` for a consumer who installed the
+  kit rather than cloning it. Either may be absent information; neither substitutes for the other;
 - `attributable`: true only when an exact clean engine commit is known;
 - `runs_path`: raw JSONL for drill-down; and
 - `summary`: run depth, blind statistics, win interval, and advance curve.
@@ -23,4 +25,4 @@ highest-ante delta with bootstrap interval, advance-curve overlays, and McNemar 
 reaching a declared ante.
 
 Machine-readable envelope schemas live in `schemas/`. The raw JSONL remains the audit source; the
-summary can be re-derived with `src.playground.metrics`.
+summary can be re-derived with `jackhammer.playground.metrics`.

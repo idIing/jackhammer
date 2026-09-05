@@ -14,7 +14,7 @@ def test_machine_readable_schemas_are_valid_json():
 
 
 def test_example_dataset_loads():
-    from src.bench.datasets import load_dataset
+    from jackhammer.bench.datasets import load_dataset
 
     dataset = load_dataset(ROOT / "examples" / "datasets" / "coverage-example.json")
     assert dataset.name == "coverage-example"
@@ -29,7 +29,7 @@ def test_shop_baselines_record_their_tactical_layer():
     component doing most of the work. ``random-legal`` has no tactical layer and
     correctly records an empty label.
     """
-    from src.bench import agents
+    from jackhammer.bench import agents
 
     for name in ("random-shop", "greedy-shop"):
         identity = agents.get(name).identity()
@@ -44,7 +44,7 @@ def test_protocol_is_v2():
     The stamp is what tells a reader which apparatus produced a number. Pinning it
     here means demoting the protocol has to be deliberate.
     """
-    from src.bench.provenance import PROTOCOL
+    from jackhammer.bench.provenance import PROTOCOL
 
     assert PROTOCOL == "jackhammer/v2"
 
@@ -59,8 +59,8 @@ def test_episode_loop_plays_no_phase_for_the_agent():
     """
     from jackdaw.env import BalatroEnvironment, DirectAdapter
 
-    from src.playground.seeds import load_battery
-    from src.selfplay.runner import play_episode
+    from jackhammer.playground.seeds import load_battery
+    from jackhammer.selfplay.runner import play_episode
 
     seen: list[str] = []
 
@@ -89,8 +89,8 @@ def test_shop_baselines_declare_their_abstentions_as_policy():
     """
     from jackdaw.env import ActionType, BalatroEnvironment, DirectAdapter, get_action_mask
 
-    from src.playground.harness import GreedyShop, GreedyTactical, MarginValue, build_decider
-    from src.playground.seeds import load_battery
+    from jackhammer.playground.harness import GreedyShop, GreedyTactical, MarginValue, build_decider
+    from jackhammer.playground.seeds import load_battery
 
     env = BalatroEnvironment(adapter_factory=DirectAdapter)
     decide_fn = build_decider(env, GreedyTactical(score_budget=64), GreedyShop(), MarginValue())
@@ -136,8 +136,8 @@ def test_random_legal_can_skip_a_blind():
 
     from jackdaw.env import ActionType, BalatroEnvironment, DirectAdapter
 
-    from src.playground.seeds import load_battery
-    from src.selfplay.runner import random_decider
+    from jackhammer.playground.seeds import load_battery
+    from jackhammer.selfplay.runner import random_decider
 
     env = BalatroEnvironment(adapter_factory=DirectAdapter)
     _obs, mask, info = env.reset(seed=load_battery("train")[0])
@@ -161,7 +161,7 @@ def test_score_budget_override_records_the_budget_that_ran():
     reading ``score_budget=300`` while 8000 produced it would misattribute the
     result to the frozen v1 configuration.
     """
-    from src.bench import agents
+    from jackhammer.bench import agents
 
     for name in ("random-shop", "greedy-shop"):
         spec = agents.get(name)
@@ -181,7 +181,7 @@ def test_score_budget_override_refuses_agents_it_cannot_reach():
     """
     import pytest
 
-    from src.bench import agents
+    from jackhammer.bench import agents
 
     with pytest.raises(ValueError, match="no tunable tactical layer"):
         agents.with_score_budget(agents.get("random-legal"), 8000)
@@ -192,9 +192,74 @@ def test_score_budget_override_refuses_agents_it_cannot_reach():
 
 def test_a_swept_budget_is_not_stamped_as_a_v1_result():
     """The sweep protocol must be distinct from the frozen benchmark protocol."""
-    from src.bench import provenance
+    from jackhammer.bench import provenance
 
     assert provenance.TACTICAL_PROTOCOL != provenance.PROTOCOL
     # The frozen protocol itself is pinned by `test_protocol_is_v2`; what matters
     # here is that a sweep can never be stamped with it, whatever its version.
     assert provenance.PROTOCOL == "jackhammer/v2"
+
+
+def test_the_engine_dependency_pins_the_protocol_commit():
+    """A bare ``jackdaw`` requirement installs somebody else's package.
+
+    ``jackdaw`` on PyPI is an unrelated Active Directory tool. Before this was
+    pinned by direct reference, the built wheel's ``Requires-Dist: jackdaw``
+    resolved to it, and a ``pip install`` of the kit failed at
+    ``import jackdaw.env`` -- while ``uv sync`` in a checkout stayed green,
+    because the git pin lived in ``[tool.uv.sources]`` and never shipped.
+
+    So this asserts the pin travels in installable metadata, and that it names
+    the same commit protocol v2 section 1 does. The two drifting apart would
+    silently evaluate agents on an engine the protocol does not describe.
+    """
+    import tomllib
+
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    deps = pyproject["project"]["dependencies"]
+    jackdaw = [d for d in deps if d.split()[0].split("@")[0].strip() == "jackdaw"]
+    assert len(jackdaw) == 1, deps
+    assert "git+https://github.com/idIing/jackdaw-balatro.git@" in jackdaw[0], jackdaw[0]
+
+    commit = jackdaw[0].rsplit("@", 1)[1].strip()
+    assert len(commit) == 40, f"pin the full commit, not {commit!r}"
+    protocol = (ROOT / "docs" / "protocol-v2.md").read_text()
+    assert commit in protocol, f"{commit} is not the engine protocol v2 names"
+
+
+def test_installed_kit_stamps_its_release_version():
+    """``kit.version`` must survive into a wheel; ``kit.commit`` need not.
+
+    A consumer who installed the kit has no checkout, so a git-derived version
+    would be None for exactly the users a pip-installable release is for. The
+    version therefore comes from the installed distribution metadata.
+    """
+    from importlib import metadata
+
+    from jackhammer.bench import provenance
+
+    kit = provenance.kit_pin()
+    assert set(kit) == {"version", "commit", "dirty"}, kit
+    assert kit["version"] == metadata.version(provenance.DIST_NAME)
+    assert isinstance(kit["version"], str) and kit["version"], kit
+
+
+def test_the_frozen_battery_is_found_and_named_the_same_way_either_way():
+    """The battery must load from a wheel, and stamp the path protocol v2 names.
+
+    It lives at the repo root in a checkout and is copied into the package by the
+    wheel build. Both must resolve, and both must stamp the same string -- an
+    artifact should not record how the kit was installed.
+    """
+    from jackhammer.bench import provenance
+    from jackhammer.playground.seeds import BATTERY_PATH, load_battery
+
+    assert BATTERY_PATH.exists(), BATTERY_PATH
+    assert len(load_battery("train")) == 240
+
+    stamped = provenance.stamp(battery_path=BATTERY_PATH, split="train", n_seeds=240)
+    assert stamped["battery"]["path"] == "config/seed_battery_v1.json"
+    assert stamped["battery"]["path"] in (ROOT / "docs" / "protocol-v2.md").read_text()
+
+    packaged = provenance.PACKAGE_ROOT / "config" / "seed_battery_v1.json"
+    assert provenance._battery_ref(packaged) == "config/seed_battery_v1.json"

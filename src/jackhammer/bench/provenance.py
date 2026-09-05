@@ -14,6 +14,11 @@ The public install resolves Jackdaw from a pinned Git dependency. PEP 610's
 a source checkout instead uses Git directly so local modifications are visible.
 If neither route can identify a commit, the result degrades to unattributable
 rather than crashing.
+
+The same rule governs the kit's own stamp. A consumer who installed from a wheel
+has no git checkout, so every git-derived field is None rather than an exception —
+which is why ``kit.version`` reads the installed distribution metadata instead.
+``kit.commit`` stays git-derived, and is the field that can show local edits.
 """
 
 from __future__ import annotations
@@ -39,9 +44,21 @@ PROTOCOL = "jackhammer/v2"
 # Stamped separately so a sweep can never be mistaken for the benchmark number.
 TACTICAL_PROTOCOL = "jackhammer/tactical-sweep/v1"
 
-# provenance.py is src/bench/provenance.py -> parents[2] is the repo root.
-REPO_ROOT = Path(__file__).resolve().parents[2]
-ENGINE_PATH = REPO_ROOT / "vendor" / "jackdaw-balatro"
+# The distribution name in pyproject.toml. `kit.version` comes from the installed
+# metadata rather than from git, because the consumer this release exists for -- one
+# who ran `pip install` and has no checkout -- is exactly the consumer for whom every
+# git-derived field is None.
+DIST_NAME = "jackhammer-benchmark"
+
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]  # .../jackhammer
+
+# A source checkout puts the package at <repo>/src/jackhammer; an installed wheel puts
+# it in site-packages, with no repo above it. Guessing one anyway is not a harmless
+# default: site-packages often sits inside the *consumer's* project, and `_pin` would
+# then stamp their commit and their dirty flag as the kit's. None is the honest answer,
+# and `_pin` already reports an unknown checkout as {commit: None, dirty: None}.
+REPO_ROOT = PACKAGE_ROOT.parents[1] if PACKAGE_ROOT.parent.name == "src" else None
+ENGINE_PATH = REPO_ROOT / "vendor" / "jackdaw-balatro" if REPO_ROOT is not None else None
 
 
 def _git(cwd: Path, *args: str) -> str | None:
@@ -69,12 +86,15 @@ def _git(cwd: Path, *args: str) -> str | None:
     return out.stdout.strip()
 
 
-def _pin(path: Path) -> dict[str, Any]:
+def _pin(path: Path | None) -> dict[str, Any]:
     """Commit SHA + dirty flag for the checkout at *path*.
 
     ``dirty`` is None (not False) when the commit itself is unknown — absence of
-    evidence, so callers can tell "clean" apart from "unknowable".
+    evidence, so callers can tell "clean" apart from "unknowable". *path* is None
+    when there is no checkout to look in at all (an installed wheel).
     """
+    if path is None:
+        return {"commit": None, "dirty": None}
     commit = _git(path, "rev-parse", "HEAD")
     if commit is None:
         return {"commit": None, "dirty": None}
@@ -136,6 +156,44 @@ def engine_pin() -> dict[str, Any]:
     }
 
 
+def kit_version() -> str | None:
+    """The installed kit's release version, or None if it is not installed.
+
+    Deliberately not derived from git: a released version must survive into a wheel,
+    and ``git describe`` returns nothing outside a checkout. None means "running from
+    a tree that was never installed", which is a real state and not an error.
+    """
+    try:
+        return metadata.version(DIST_NAME)
+    except metadata.PackageNotFoundError:
+        return None
+
+
+def kit_pin() -> dict[str, Any]:
+    """Identify the benchmark kit itself: release version plus checkout commit.
+
+    The two answer different questions and neither replaces the other. ``version``
+    says which release this is and is the only field a wheel consumer can have;
+    ``commit`` resolves exactly which tree ran and is the only field that can show
+    local edits. Either may be None.
+    """
+    return {"version": kit_version(), **_pin(REPO_ROOT)}
+
+
+def _battery_ref(battery_path: Path) -> str:
+    """How a battery is named in the stamp: shortest stable path, else absolute.
+
+    Package-relative first so the frozen battery stamps ``config/seed_battery_v1.json``
+    whether it was loaded from a wheel or a checkout — an artifact should not record
+    how the kit was installed. Repo-relative second, which is what a ``--dataset``
+    manifest inside the checkout resolves to.
+    """
+    for root in (PACKAGE_ROOT, REPO_ROOT):
+        if root is not None and battery_path.is_relative_to(root):
+            return str(battery_path.relative_to(root))
+    return str(battery_path)
+
+
 def stamp(
     *,
     battery_path: Path,
@@ -161,9 +219,7 @@ def stamp(
         A JSON-serialisable dict. No field is permitted to raise.
     """
     battery: dict[str, Any] = {
-        "path": str(battery_path.relative_to(REPO_ROOT))
-        if battery_path.is_relative_to(REPO_ROOT)
-        else str(battery_path),
+        "path": _battery_ref(battery_path),
         "split": split,
         "n_seeds": n_seeds,
         "digest": digest_file(battery_path),
@@ -177,7 +233,7 @@ def stamp(
         "protocol": protocol,
         "battery": battery,
         "engine": engine_pin(),
-        "kit": _pin(REPO_ROOT),
+        "kit": kit_pin(),
         "runtime": {
             "python": platform.python_version(),
             "platform": platform.platform(),

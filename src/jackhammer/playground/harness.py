@@ -13,7 +13,7 @@ This module is *plumbing*: the baseline fills are deliberately crude. The only h
 invariants are (a) every emitted action is **legal** (the composer legality-gates each
 slot's output), and (b) any slot that previews/rolls out is **non-mutating** — it
 ``env.get_state()`` before stepping and ``env.load_state()`` after, exactly like
-``src/selfplay/tools.py:calculate_score``. A value estimator that mutates the live env
+``src/jackhammer/selfplay/tools.py:calculate_score``. A value estimator that mutates the live env
 would corrupt the real game.
 
 The composer (:func:`build_decider`) closes over the *same* ``env`` object that
@@ -36,11 +36,11 @@ from jackdaw.env import (
     get_action_mask,
 )
 
-from src.playground.exact_score import preview_play
-from src.selfplay.decision import get_fallback_action, is_action_legal
-from src.selfplay.recorder import ACTION_NAMES, RunMeta, RunRecorder
-from src.selfplay.runner import RunResult, play_episode
-from src.selfplay.tools import calculate_score
+from jackhammer.playground.exact_score import preview_play
+from jackhammer.selfplay.decision import get_fallback_action, is_action_legal
+from jackhammer.selfplay.recorder import ACTION_NAMES, RunMeta, RunRecorder
+from jackhammer.selfplay.runner import RunResult, play_episode
+from jackhammer.selfplay.tools import calculate_score
 
 # Action-type ids (mirror jackdaw ActionType / recorder ACTION_NAMES).
 _PLAY = int(ActionType.PlayHand)

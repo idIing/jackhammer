@@ -1,4 +1,4 @@
-"""Contract tests for the benchmark substrate (``src.bench``).
+"""Contract tests for the benchmark substrate (``jackhammer.bench``).
 
 These guard the properties that make a published number trustworthy: that it is
 pinned to an engine, that two numbers are only ever paired when they are
@@ -11,10 +11,10 @@ import json
 
 import pytest
 
-from src.bench import agents as agent_registry
-from src.bench import artifact, provenance
-from src.bench.datasets import DATASET_PROTOCOL
-from src.playground.seeds import BATTERY_PATH
+from jackhammer.bench import agents as agent_registry
+from jackhammer.bench import artifact, provenance
+from jackhammer.bench.datasets import DATASET_PROTOCOL
+from jackhammer.playground.seeds import BATTERY_PATH
 
 
 # --------------------------------------------------------------------- fixtures

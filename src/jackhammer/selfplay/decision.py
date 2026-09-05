@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 from jackdaw.env import FactoredAction
 
-from src.selfplay.recorder import ACTION_NAMES
+from jackhammer.selfplay.recorder import ACTION_NAMES
 
 
 def is_action_legal(factored: Any, mask: Any) -> tuple[bool, str]:

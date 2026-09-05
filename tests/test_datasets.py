@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from src.bench.datasets import DATASET_SCHEMA, load_dataset
+from jackhammer.bench.datasets import DATASET_SCHEMA, load_dataset
 
 
 def _manifest(**overrides):

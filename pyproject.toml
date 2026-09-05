@@ -1,13 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "jackhammer-benchmark"
-version = "0.1.0"
+version = "1.0.0"
 description = "A reproducible, paired Balatro agent benchmark on the Jackdaw simulator"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [{ name = "idIing" }]
 dependencies = [
-    "jackdaw",
+    # Pinned by direct reference, not by name. `jackdaw` on PyPI is an unrelated
+    # project (an Active Directory enumeration tool), so a bare `jackdaw` requirement
+    # installs a stranger's package and `import jackdaw.env` fails at the first agent.
+    # The commit is the one protocol v2 section 1 names: pinning it here is what makes
+    # a pip-installed kit produce an attributable result rather than a warning.
+    "jackdaw @ git+https://github.com/idIing/jackdaw-balatro.git@4d6f19d9fe73f96603412a59ad5eab16d08937e7",
     "numpy>=1.24",
 ]
 
@@ -17,12 +26,27 @@ dev = [
     "ruff>=0.15.6",
 ]
 
-[tool.uv.sources]
-jackdaw = { git = "https://github.com/idIing/jackdaw-balatro.git", rev = "4d6f19d9fe73f96603412a59ad5eab16d08937e7" }
+# Required for the pinned `jackdaw @ git+...` dependency above.
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jackhammer"]
+
+# The frozen seed battery is data the kit cannot run without, and it lives at the repo
+# root because protocol v2 § 2 names that path and every artifact stamps it. Copying it
+# into the wheel is what makes `pip install` produce a working benchmark rather than an
+# importable package that raises on load_battery(). See playground/seeds.py.
+[tool.hatch.build.targets.wheel.force-include]
+"config/seed_battery_v1.json" = "jackhammer/config/seed_battery_v1.json"
+
+# No [tool.uv.sources] for jackdaw: the pin above is a PEP 508 direct reference, so it
+# travels in the built wheel's metadata. A uv-only source would pin this checkout and
+# leave every installed copy resolving `jackdaw` from PyPI -- one pin, in the place
+# that ships, rather than two that can drift apart.
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
 addopts = ["-q", "-m", "not legacy_slow"]
 markers = [
     "legacy_slow: retained baseline regression test excluded from the fast public suite",

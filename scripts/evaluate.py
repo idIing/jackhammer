@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Run a registered agent on benchmark v1 or a versioned diagnostic dataset.
 
-Agents come from ``src.bench.agents``, so adding one is a registration, not an
+Agents come from ``jackhammer.bench.agents``, so adding one is a registration, not an
 edit to this runner.
 
 Usage::
@@ -11,7 +11,7 @@ Usage::
     python scripts/evaluate.py --agent greedy-shop --vs random-shop --split train
     python scripts/evaluate.py --agent greedy-shop --dataset my-seeds.json --split sample
 
-Every run writes a standardized artifact (``src.bench.artifact``) stamped with
+Every run writes a standardized artifact (``jackhammer.bench.artifact``) stamped with
 the engine commit, battery digest, and agent identity. ``--vs`` additionally
 writes the paired comparison, which is the only form in which a *difference*
 between two agents should be reported.
@@ -25,20 +25,21 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
 import time
 from multiprocessing import Pool
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO))
+from jackhammer.bench import agents as agent_registry
+from jackhammer.bench import artifact, provenance
+from jackhammer.bench.datasets import DATASET_PROTOCOL, load_dataset
+from jackhammer.playground import metrics
+from jackhammer.playground.harness import run_battery_with
+from jackhammer.playground.seeds import BATTERY_PATH, load_battery
 
-from src.bench import agents as agent_registry  # noqa: E402
-from src.bench import artifact, provenance  # noqa: E402
-from src.bench.datasets import DATASET_PROTOCOL, load_dataset  # noqa: E402
-from src.playground import metrics  # noqa: E402
-from src.playground.harness import run_battery_with  # noqa: E402
-from src.playground.seeds import BATTERY_PATH, load_battery  # noqa: E402
+# Where this script writes, not where the kit is installed: `jackhammer` is imported
+# from the environment now, so running this from a checkout and running it against an
+# installed wheel take the same path.
+REPO = Path(__file__).resolve().parents[1]
 
 HOLDOUT_FLAG = "--i-am-consuming-the-holdout"
 

@@ -12,7 +12,7 @@ baseline on the same seeds, so it cannot support a claim about a difference.
 A paired design makes each seed its own control, which is why the artifact
 carries ``n_paired`` and the joined seed list rather than two independent totals.
 
-The statistics are *not* computed here; ``src.playground.metrics`` already owns
+The statistics are *not* computed here; ``jackhammer.playground.metrics`` already owns
 and tests them. This module only stamps, shapes, and serializes.
 """
 
@@ -23,9 +23,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.bench.agents import AgentSpec
-from src.bench.provenance import is_attributable
-from src.playground import metrics
+from jackhammer.bench.agents import AgentSpec
+from jackhammer.bench.provenance import is_attributable
+from jackhammer.playground import metrics
 
 RESULT_SCHEMA = "jackhammer.result/v1"
 COMPARISON_SCHEMA = "jackhammer.comparison/v1"
