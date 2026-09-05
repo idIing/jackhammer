@@ -26,7 +26,7 @@ install -> run a baseline -> add an agent -> compare on identical seeds -> inspe
 | Random Shop | `random-shop` | `GreedyTactical` card play; random legal shop actions | 1.637 |
 | Cheapest-Joker Shop | `greedy-shop` | `GreedyTactical` card play; buys the cheapest affordable Joker | 3.204 |
 
-Those are the complete 240-seed v1 results on the `idIing/jackdaw-balatro` fork of Jackdaw at
+Those are the complete 240-seed v2 results on the `idIing/jackdaw-balatro` fork of Jackdaw at
 [`4d6f19d`](https://github.com/idIing/jackdaw-balatro/commit/4d6f19d9fe73f96603412a59ad5eab16d08937e7),
 the exact commit the lockfile installs; all three went 0/240 on wins. The stable ID `greedy-shop`
 predates the clearer display name and is retained so existing artifacts stay comparable. The paired
@@ -68,9 +68,9 @@ uv run python scripts/evaluate.py --list
 Expected list output:
 
 ```text
-  greedy-shop      Buys the cheapest affordable joker; fixed greedy tactics.
-  random-legal     Uniformly-random legal action everywhere. The floor.
-  random-shop      Uniformly-random legal shop action; fixed greedy tactics.
+  greedy-shop      Buys the cheapest affordable joker; fixed greedy tactics; never skips a blind, never uses a consumable before cash-out.
+  random-legal     Uniformly-random legal action in every phase, including skipping blinds and using consumables before cash-out. The floor.
+  random-shop      Uniformly-random legal shop action; fixed greedy tactics; never skips a blind, never uses a consumable before cash-out.
 ```
 
 ## Run the benchmark
@@ -95,7 +95,7 @@ paired (240 seeds): greedy-shop - random-shop = +1.567 ante [+1.400, +1.729] boo
   interval excludes zero
 ```
 
-See [the frozen protocol](docs/protocol-v1.md) for what that claim means and
+See [the frozen protocol](docs/protocol-v2.md) for what that claim means and
 [the artifact contract](docs/result-artifacts.md) for the machine-readable output.
 
 ## Inspect a failure
@@ -117,7 +117,7 @@ the closest baseline with `--vs`.
 
 ## Add a seed dataset
 
-Protocol v1 always means the committed 240-seed `train` split. New coverage, stress, curriculum, or
+Protocol v2 always means the committed 240-seed `train` split. New coverage, stress, curriculum, or
 seed-difficulty questions belong in versioned sidecar manifests:
 
 ```bash
@@ -127,7 +127,7 @@ uv run python scripts/evaluate.py \
   --split sample
 ```
 
-Custom datasets are stamped as `jackhammer/dataset-eval/v1`, never `jackhammer/v1`. That makes
+Custom datasets are stamped as `jackhammer/dataset-eval/v2`, never `jackhammer/v2`. That makes
 future questions such as “how does seed coverage affect measured agent strength?” additive without
 silently moving the headline benchmark. See [Adding datasets](docs/datasets.md).
 

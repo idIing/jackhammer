@@ -1,8 +1,14 @@
 # Known limits
 
-- **Simulator proxy:** Jackdaw is not live Balatro. The v1 pin has deterministic and engine tests,
-  but no claim of complete simulator equivalence follows from those checks.
-- **One configuration:** v1 covers Red Deck, White Stake, one engine pin, and one IID seed battery.
+- **Simulator proxy:** Jackdaw is not live Balatro. The pinned engine has deterministic and engine
+  tests, but no claim of complete simulator equivalence follows from those checks.
+- **One configuration:** v2 covers Red Deck, White Stake, one engine pin, and one IID seed battery.
+- **The shop baselines decline two decisions:** `random-shop` and `greedy-shop` always select the
+  blind and always cash out immediately, so neither ever takes a skip tag or uses a consumable while
+  it can still change the next shop. That is their declared policy, not a harness limit — under
+  protocol v1 it *was* a harness limit imposed on every agent, `random-legal` included. Holding it
+  fixed keeps the paired difference between the two arms attributable to the shop policy, but it
+  means the slate contains no baseline that skips deliberately. `random-legal` skips at random.
 - **Weak baselines:** all three built-ins won 0/240. Mean highest ante separates them, but the slate
   does not represent the field's strongest agents.
 - **Cheapest-Joker policy:** `greedy-shop` buys only Jokers, never evaluates their text or synergy,
@@ -56,7 +62,7 @@ the first differing action is a shop decision in 232/240, never a tactical one.
 uv run python scripts/evaluate.py --agent greedy-shop --vs random-shop --score-budget 8000
 ```
 
-Any budget other than the v1 `300` is stamped `jackhammer/tactical-sweep/v1` with
+Any budget other than the frozen `300` is stamped `jackhammer/tactical-sweep/v1` with
 `scope: diagnostic`, and the result's `agent.tactical` records the budget that actually ran, so a
 sweep can never be read as a v1 number. Doing so shifts `greedy-shop` by +0.104 ante
 `[+0.046, +0.175]` and `random-shop` by +0.004 `[+0.000, +0.013]`, and changes the outcome of 13/240
@@ -75,8 +81,8 @@ lockups are in the published records —
 `uv run python scripts/inspect_run.py data/bench/greedy-shop.jsonl --seed 657P5QGW` prints three
 `High Card score=0` plays.
 
-**Why v1 keeps it.** Raising the cap moves published numbers, so it is a v2 question, not a v1
-patch. The outcome plateaus at `score_budget=2000` (mean highest ante 3.308, unchanged at 4000, 8000
+**Why the frozen protocol keeps it.** Raising the cap moves published numbers, so it is a question
+for the next protocol version — v3 — and not a patch to the current one. The outcome plateaus at `score_budget=2000` (mean highest ante 3.308, unchanged at 4000, 8000
 and 16000), and 2379 — every subset of size <=5 of the largest hand this battery dealt, 13
 cards — is the budget above which no scan in these runs can truncate at all. Going from 300 to 8000
 scans 7.4% more combos for 14.5% more wall clock (82.9s -> 94.9s, 14 workers).

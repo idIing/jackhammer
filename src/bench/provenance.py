@@ -28,7 +28,12 @@ from pathlib import Path
 from typing import Any
 
 # Bump when the *meaning* of a stamped field changes, not when a value changes.
-PROTOCOL = "jackhammer/v1"
+#
+# v2 (2026-09-04): the episode loop stopped auto-playing blind select and cash-out,
+# so an agent's action set is now the engine's. Every v1 number was produced by an
+# agent that could not skip a blind or use a consumable before the shop was rolled.
+# v1 and v2 artifacts are not comparable; see docs/protocol-v2.md § What changed.
+PROTOCOL = "jackhammer/v2"
 
 # A run whose shared tactical budget is not the frozen v1 cap is not a v1 result.
 # Stamped separately so a sweep can never be mistaken for the benchmark number.
