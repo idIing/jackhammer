@@ -72,6 +72,31 @@ Declining is a legitimate policy and costs nothing measurable on the current sla
 `description`: the string is stamped into every artifact you publish, and a description that claims
 a broader action set than the agent uses is the exact defect v2 exists to fix.
 
+### Declaring what you actually do (optional, recommended)
+
+Prose descriptions drift from policies, and no test catches it — the reference agent shipped for
+months described as taking pack cards it can never reach. So `AgentSpec` takes an optional
+`declared_actions`: the action types you claim appear in your decision stream on this battery.
+
+```python
+register(
+    AgentSpec(
+        name="my-agent-v1",
+        description="One honest line shown by evaluate.py --list.",
+        make_decider=make_decider,
+        declared_actions=("PlayHand", "Discard", "SelectBlind", "CashOut", "BuyCard", "NextRound"),
+    )
+)
+```
+
+`scripts/evaluate.py` then reads it back out of the recorded runs. Emitting an action you did not
+declare fails the evaluation at any sample size; declaring one your complete-battery run never
+contains fails it too (on a `--limit` smoke run that is reported as a sample-size caveat instead).
+Omit the field and your repertoire is reported and never enforced — every artifact still carries
+`summary.repertoire`, so a reader can see what your agent did either way. Names come from
+`jackhammer.bench.repertoire.ALL_ACTIONS`; a name that is not an action type is rejected at
+registration.
+
 Leave `was_fallback` false for decisions your policy actually made. It means "the harness
 substituted for the agent", not "the agent had no preference" — a policy that internally reaches for
 a default still returns an ordinary action and is recorded as having decided.
@@ -102,8 +127,9 @@ uv run python scripts/evaluate.py \
   --agent my-agent-v1 --vs greedy-shop --limit 8 --workers 4
 ```
 
-Audit raw runs with `scripts/inspect_run.py`. Only after that should you remove `--limit` for the
-full 240-seed comparison. Report negative or null intervals as results, not invitations to tune on
+Audit raw runs with `scripts/inspect_run.py`, and read the repertoire line the evaluator prints —
+an agent doing far less than you think is not visible in its mean. Only after that should you remove
+`--limit` for the full 240-seed comparison. Report negative or null intervals as results, not invitations to tune on
 the same public battery until the sign changes.
 
 Never change an existing stable agent ID's behavior. A behavioral revision gets a new ID.

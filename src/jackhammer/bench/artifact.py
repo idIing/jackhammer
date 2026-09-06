@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from jackhammer.bench import repertoire
 from jackhammer.bench.agents import AgentSpec
 from jackhammer.bench.provenance import is_attributable
 from jackhammer.playground import metrics
@@ -78,7 +79,10 @@ def build_result(
             "provenance": provenance,
             "attributable": is_attributable(provenance),
             "runs_path": runs_path,
-            "summary": metrics.summarize(runs),
+            "summary": metrics.summarize(runs)
+            # What the agent actually did, beside what it claims to do. The
+            # descriptive metrics say how deep it got; this says what it ever tried.
+            | {"repertoire": repertoire.audit(runs, spec.declared_actions)},
         }
     )
 

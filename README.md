@@ -50,8 +50,13 @@ equally on the two arms: shopping grows the hand, so `greedy-shop` truncates ~2.
 `+1.567` understates the contrast by about 0.1 ante — see [known limits](docs/known-limits.md).
 
 This ladder is intentionally weak. `greedy-shop` does not understand Joker text, quality, rarity,
-or synergy; it never rerolls or sells and it does not buy vouchers or consumables. That gap is an
-open contribution surface, not something hidden behind a flattering name.
+or synergy; it never rerolls or sells, it does not buy vouchers or consumables, and it never opens a
+booster pack. Over the whole battery it emits 6 of the engine's 21 action types; `random-shop` emits
+16. So the `+1.567` prices buying the cheapest Joker at all against an arm that touches most of the
+shop at random — the narrowest agent on the slate beating the widest one. Every run records that
+histogram and the evaluator checks it against each baseline's published description
+([declared repertoires](docs/known-limits.md#declared-repertoires)). That gap is an open
+contribution surface, not something hidden behind a flattering name.
 
 ## Install
 
@@ -90,7 +95,7 @@ Expected list output:
 
 ```text
   greedy-shop      Buys the cheapest affordable joker; fixed greedy tactics; never skips a blind, never uses a consumable before cash-out.
-  random-legal     Uniformly-random legal action in every phase, including skipping blinds and using consumables before cash-out. The floor.
+  random-legal     Uniformly-random legal action in every phase; unlike the shop baselines it may skip a blind and may act at cash-out. The floor.
   random-shop      Uniformly-random legal shop action; fixed greedy tactics; never skips a blind, never uses a consumable before cash-out.
 ```
 

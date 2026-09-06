@@ -30,7 +30,7 @@ from multiprocessing import Pool
 from pathlib import Path
 
 from jackhammer.bench import agents as agent_registry
-from jackhammer.bench import artifact, provenance
+from jackhammer.bench import artifact, provenance, repertoire
 from jackhammer.bench.datasets import DATASET_PROTOCOL, load_dataset
 from jackhammer.playground import metrics
 from jackhammer.playground.harness import run_battery_with
@@ -225,6 +225,9 @@ def main() -> int:
         ap.error(str(exc))
     if args.limit:
         seeds = seeds[: args.limit]
+    # "the agent never does X" is only measurable when every seed of the frozen split
+    # ran. On a smoke run the same finding is just a small sample.
+    complete_battery = args.dataset is None and not args.limit
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -257,6 +260,7 @@ def main() -> int:
 
     results: dict[str, dict] = {}
     runs: dict[str, list[dict]] = {}
+    mismatches = 0
     for name in agent_names:
         runs[name] = metrics.load_runs(str(paths[name]))
         # The published identity must name the budget that actually ran, not the
@@ -275,6 +279,13 @@ def main() -> int:
         depth = results[name]["summary"]["run_depth"]
         print(f"\n{name}: {len(runs[name])} runs -> {written}", flush=True)
         print(f"  mean highest ante: {depth.get('mean'):.3f}", flush=True)
+        # The decision stream, read: every published behavioural claim about a
+        # built-in baseline is checkable here, and only here. See
+        # `jackhammer.bench.repertoire`.
+        rep = results[name]["summary"]["repertoire"]
+        print(repertoire.format_report(name, rep, complete=complete_battery), flush=True)
+        if rep["undeclared"] or (rep["unexercised"] and complete_battery):
+            mismatches += 1
 
     if args.vs:
         comparison = artifact.build_comparison(
@@ -296,7 +307,7 @@ def main() -> int:
         print(f"  interval {'excludes' if excludes_zero else 'includes'} zero", flush=True)
         print(f"  -> {path}", flush=True)
 
-    return 1 if fails else 0
+    return 1 if (fails or mismatches) else 0
 
 
 if __name__ == "__main__":

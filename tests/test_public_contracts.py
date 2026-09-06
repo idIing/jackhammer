@@ -263,3 +263,77 @@ def test_the_frozen_battery_is_found_and_named_the_same_way_either_way():
 
     packaged = provenance.PACKAGE_ROOT / "config" / "seed_battery_v1.json"
     assert provenance._battery_ref(packaged) == "config/seed_battery_v1.json"
+
+
+def test_known_limits_carries_the_generated_repertoire_block():
+    """The published description of a baseline must be generated, not retyped.
+
+    ``docs/known-limits.md`` shipped "takes the first pack card" for `greedy-shop`,
+    describing a branch that cannot execute — the policy never buys a booster, so
+    ``PACK_OPENING`` is never entered. It was written by reading the code, which is
+    the one way that claim could not be checked. Generating the table from the
+    registry means the file cannot describe an agent the registry does not.
+    """
+    from jackhammer.bench.repertoire import docs_block
+
+    text = (ROOT / "docs" / "known-limits.md").read_text()
+    start = text.index("<!-- BEGIN declared-repertoire -->") + len(
+        "<!-- BEGIN declared-repertoire -->"
+    )
+    end = text.index("<!-- END declared-repertoire -->")
+    assert text[start:end].strip() == docs_block(), (
+        "docs/known-limits.md is stale; replace the block between the markers with:\n\n"
+        + docs_block()
+    )
+
+
+def test_every_built_in_baseline_declares_a_repertoire():
+    """A published baseline with no declaration is a claim nothing checks.
+
+    Submitted agents may decline to declare — the gate is for the numbers this
+    repository publishes.
+    """
+    from jackhammer.bench import agents
+
+    for name in ("random-legal", "random-shop", "greedy-shop"):
+        declared = agents.get(name).declared_actions
+        assert declared, name
+        assert agents.get(name).identity()["declared_actions"] == list(declared)
+
+
+def test_greedy_shop_declares_no_pack_action():
+    """The corrected limit, pinned as a test rather than as prose.
+
+    ``GreedyShop._joker_buys`` filters shop candidates to ``ability.set == "Joker"``,
+    so no booster is ever bought and the pack-choice branch is unreachable. If the
+    shop policy ever gains packs, this fails and the description gets rewritten with
+    it, rather than one drifting from the other.
+    """
+    from jackhammer.bench import agents
+
+    declared = agents.get("greedy-shop").declared_actions
+    assert "OpenBooster" not in declared
+    assert "PickPackCard" not in declared
+    assert set(declared) == {
+        "PlayHand",
+        "Discard",
+        "SelectBlind",
+        "CashOut",
+        "NextRound",
+        "BuyCard",
+    }
+
+
+def test_a_declaration_cannot_name_a_non_action():
+    """A typo would read as a permanent mismatch against a correct agent."""
+    import pytest
+
+    from jackhammer.bench.agents import AgentSpec
+
+    with pytest.raises(ValueError, match="not action type name"):
+        AgentSpec(
+            name="typo",
+            description="",
+            make_decider=lambda e, s: None,
+            declared_actions=("PlayHand", "BuyJoker"),
+        )
