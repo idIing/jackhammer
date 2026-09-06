@@ -25,9 +25,11 @@ from __future__ import annotations
 
 import itertools
 import random
-from typing import Protocol, runtime_checkable
+from contextlib import contextmanager
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
+from jackdaw.engine.actions import RedeemVoucher, SelectBlind
 from jackdaw.env import (
     ActionType,
     BalatroEnvironment,
@@ -587,6 +589,144 @@ def _packet(fa: FactoredAction, reasoning: str, was_fallback: bool):
 
 
 # ---------------------------------------------------------------------------
+# Run observation
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class StateObserver(Protocol):
+    """Watches the engine layer: the state after the reset and after every step."""
+
+    def observe(self, state: dict[str, Any], *, event: str | None = None) -> None:
+        """``event`` labels the action that produced the state, or is ``None``."""
+
+
+@runtime_checkable
+class DecisionObserver(Protocol):
+    """Watches the agent layer: what a decider was offered, and what it chose."""
+
+    def observe_decision(self, state: dict[str, Any], mask: Any, action: Any) -> None:
+        """``mask`` is the legal-action mask handed to the decider for ``state``."""
+
+
+#: Anything a battery run will accept as instrumentation.
+RunObserver = StateObserver | DecisionObserver
+"""Pure-read instrumentation attached to a battery run.
+
+An observer sees a run; it never changes one. Its hooks are called for side
+effects only, their return values are ignored, and an observer that mutates the
+state it is handed corrupts the run it was supposed to measure.
+
+The two hooks are independent, because the two things worth watching arrive at
+different layers, and implementing one does not imply wanting the other.
+:class:`StateObserver` fires at the engine layer and is the only place a
+state-transition check can see both sides of a step. :class:`DecisionObserver`
+fires at the agent layer with the legal-action mask, which the engine layer
+cannot reconstruct. Implement either, or both; a class that implements neither
+is rejected rather than silently ignored. :class:`NullObserver` is a convenient
+base with both as no-ops, but inheriting it is not required — the hooks are
+matched structurally.
+
+Neither hook sees the checkpointed previews an agent runs while deciding: those
+load and re-step the engine, and counting them would make the trace a record of
+what the agent considered rather than of what happened.
+"""
+
+
+class NullObserver:
+    """An observer whose hooks do nothing. Override one, inherit the rest."""
+
+    def observe(self, state: dict[str, Any], *, event: str | None = None) -> None:
+        """Ignore the state."""
+
+    def observe_decision(self, state: dict[str, Any], mask: Any, action: Any) -> None:
+        """Ignore the decision."""
+
+
+def event_for_engine_action(state: dict[str, Any], action: Any) -> str | None:
+    """Label an engine action, using reads from the *pre-step* state only.
+
+    Most actions are adequately named by their type. The two that are not carry
+    the identity of what they act on in an index into the pre-step state, which
+    is gone by the time the step returns: which blind was selected, and which
+    voucher was redeemed.
+    """
+    if isinstance(action, SelectBlind):
+        return "select_blind"
+    if isinstance(action, RedeemVoucher):
+        vouchers = state.get("shop_vouchers", ()) or ()
+        if 0 <= action.card_index < len(vouchers):
+            key = getattr(vouchers[action.card_index], "center_key", "")
+            return f"redeem:{key}"
+        return "redeem:unknown"
+    return type(action).__name__
+
+
+class _ObservingAdapter(DirectAdapter):
+    """``DirectAdapter`` that reports the post-reset and post-step state.
+
+    Private on purpose: the kit constructs it, so the kit can rely on
+    :meth:`suspend_observation` existing. Exposing an ``adapter_factory=``
+    parameter instead would put that requirement in a public signature the
+    caller could satisfy with a plain ``DirectAdapter``.
+    """
+
+    def __init__(self, observer: StateObserver) -> None:
+        super().__init__()
+        self._observer = observer
+        self._suspensions = 0
+
+    def reset(
+        self,
+        back_key: str,
+        stake: int,
+        seed: str,
+        *,
+        challenge: dict[str, Any] | None = None,
+    ):
+        snapshot = super().reset(back_key, stake, seed, challenge=challenge)
+        self._observer.observe(self.raw_state, event="run_reset")
+        return snapshot
+
+    def step(self, action):
+        event = event_for_engine_action(self.raw_state, action)
+        snapshot = super().step(action)
+        if not self._suspensions:
+            self._observer.observe(self.raw_state, event=event)
+        return snapshot
+
+    @contextmanager
+    def suspend_observation(self):
+        """Exclude an agent's checkpointed previews from the observed trace."""
+        self._suspensions += 1
+        try:
+            yield
+        finally:
+            self._suspensions -= 1
+
+
+def _observed_decider(decide_fn, adapter: _ObservingAdapter | None, observer):
+    """Wrap ``decide_fn`` so previews are unobserved and the real choice is reported.
+
+    ``adapter`` is ``None`` when the observer only watches decisions: there is no
+    engine-layer trace to keep previews out of, so there is nothing to suspend.
+    """
+    wants_decisions = isinstance(observer, DecisionObserver)
+
+    def decide(raw_state, mask, history):
+        if adapter is None:
+            packet = decide_fn(raw_state, mask, history)
+        else:
+            with adapter.suspend_observation():
+                packet = decide_fn(raw_state, mask, history)
+        if wants_decisions:
+            observer.observe_decision(raw_state, mask, packet[0])
+        return packet
+
+    return decide
+
+
+# ---------------------------------------------------------------------------
 # Battery runner
 # ---------------------------------------------------------------------------
 
@@ -599,6 +739,7 @@ def run_battery_with(
     slot1: str = "",
     slot2: str = "",
     max_steps: int = 2000,
+    observer: RunObserver | None = None,
 ) -> list[RunResult]:
     """Run an arbitrary decider over ``seeds``; one JSONL at ``out_path``.
 
@@ -621,10 +762,27 @@ def run_battery_with(
     ``stake=1`` — the env defaults), fresh ``RunRecorder`` appending to
     ``out_path``, a tagged ``RunMeta``, then ``play_episode``. Returns one
     ``RunResult`` per seed, in order.
+
+    An optional ``observer`` (:class:`RunObserver`) is pure-read instrumentation:
+    it is told the engine state after the reset and after every real step, and
+    the mask and action of every real decision. It cannot change the run, and a
+    run with one produces the same numbers as a run without.
     """
+    if observer is not None and not isinstance(observer, StateObserver | DecisionObserver):
+        raise TypeError(
+            "observer implements neither observe(state, *, event=None) nor "
+            f"observe_decision(state, mask, action); {type(observer).__name__} would "
+            "be called for nothing. Check the hook name against jackhammer.playground."
+        )
+
     results: list[RunResult] = []
     for seed in seeds:
-        env = BalatroEnvironment(adapter_factory=DirectAdapter)
+        adapter: _ObservingAdapter | None = None
+        if isinstance(observer, StateObserver):
+            adapter = _ObservingAdapter(observer)
+            env = BalatroEnvironment(adapter_factory=lambda: adapter)
+        else:
+            env = BalatroEnvironment(adapter_factory=DirectAdapter)
         recorder = RunRecorder(output_path=out_path)
         run_meta = RunMeta(
             seed=seed,
@@ -636,6 +794,8 @@ def run_battery_with(
             config_label=config_label,
         )
         decide_fn = make_decider(env, seed)
+        if observer is not None:
+            decide_fn = _observed_decider(decide_fn, adapter, observer)
         results.append(play_episode(env, seed, decide_fn, recorder, run_meta, max_steps=max_steps))
     return results
 
@@ -648,6 +808,7 @@ def run_battery(
     out_path: str,
     config_label: str,
     max_steps: int = 2000,
+    observer: RunObserver | None = None,
 ) -> list[RunResult]:
     """Run the (tactical, shop, value) config over ``seeds``; one JSONL at ``out_path``.
 
@@ -662,4 +823,5 @@ def run_battery(
         slot1=shop.name,
         slot2=value.name,
         max_steps=max_steps,
+        observer=observer,
     )

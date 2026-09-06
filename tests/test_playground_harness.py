@@ -10,6 +10,9 @@ Covers the load-bearing invariants:
   value estimator (proved with a fake env + counting value).
 * **Determinism**: a battery on the same seed with deterministic slots reproduces
   the same ``highest_ante``.
+* **Observer**: the optional ``observer=`` hook sees the reset, every real step and
+  every real decision, never an agent's checkpointed previews, and does not move the
+  numbers.
 * **Smoke battery**: ``RandomShop`` vs ``GreedyShop`` (both on
   ``GreedyTactical`` + ``MarginValue``) produce well-formed ``blinds`` records, and
   greedy goes at least as deep (the known-difference sanity check).
@@ -32,12 +35,15 @@ from jackdaw.env import (
 )
 
 from jackhammer.playground.harness import (
+    DecisionObserver,
     GreedyShop,
     GreedyTactical,
     MarginValue,
+    NullObserver,
     RandomShop,
     RolloutValue,
     ShopPolicy,
+    StateObserver,
     Tactical,
     ValueEstimator,
     build_decider,
@@ -310,3 +316,159 @@ if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(
         "run via: uv run --no-sync python -m pytest tests/test_playground_harness.py -q"
     )
+
+
+# ---------------------------------------------------------------------------
+# Observer hook
+# ---------------------------------------------------------------------------
+
+
+class RecordingObserver(NullObserver):
+    """Records what it is shown, and nothing else."""
+
+    def __init__(self):
+        self.events = []
+        self.decisions = []
+
+    def observe(self, state, *, event=None):
+        self.events.append(event)
+
+    def observe_decision(self, state, mask, action):
+        self.decisions.append(int(action.action_type))
+
+
+class StateOnlyObserver:
+    """Implements one hook, inherits nothing: a state-transition check."""
+
+    def __init__(self):
+        self.events = []
+
+    def observe(self, state, *, event=None):
+        self.events.append(event)
+
+
+class DecisionOnlyObserver:
+    """Implements the other hook, inherits nothing: a legality-coverage index."""
+
+    def __init__(self):
+        self.decisions = []
+
+    def observe_decision(self, state, mask, action):
+        self.decisions.append(int(action.action_type))
+
+
+def test_hooks_are_independent_and_matched_structurally():
+    """Neither hook implies the other, and neither requires inheriting NullObserver.
+
+    Wanting to watch states does not imply wanting to watch decisions. If the kit
+    demanded both, or demanded a base class, an observer that needs one hook would
+    have to carry a no-op for the other purely to satisfy the kit.
+    """
+    assert isinstance(StateOnlyObserver(), StateObserver)
+    assert not isinstance(StateOnlyObserver(), DecisionObserver)
+    assert isinstance(DecisionOnlyObserver(), DecisionObserver)
+    assert not isinstance(DecisionOnlyObserver(), StateObserver)
+    assert isinstance(NullObserver(), StateObserver)
+    assert isinstance(NullObserver(), DecisionObserver)
+
+
+def test_an_observer_with_neither_hook_is_rejected(tmp_path):
+    """A misspelled hook is a silent no-op otherwise — the failure mode is a run
+    that looks instrumented and records nothing."""
+
+    class Typo:
+        def observe_decisions(self, state, mask, action):  # note the 's'
+            raise AssertionError("never called")
+
+    with pytest.raises(TypeError, match="neither"):
+        run_battery(
+            load_battery("train")[:1],
+            GreedyTactical(score_budget=40),
+            GreedyShop(),
+            MarginValue(),
+            str(tmp_path / "rejected.jsonl"),
+            "rejected",
+            observer=Typo(),
+        )
+
+
+def test_single_hook_observers_each_run(tmp_path):
+    """A state-only observer needs no decision hook, and a decision-only observer
+    runs on the plain adapter with nothing to suspend."""
+    seeds = load_battery("train")[:2]
+    state_only = StateOnlyObserver()
+    decision_only = DecisionOnlyObserver()
+
+    results = run_battery(
+        seeds,
+        GreedyTactical(score_budget=40),
+        GreedyShop(),
+        MarginValue(),
+        str(tmp_path / "state-only.jsonl"),
+        "state-only",
+        observer=state_only,
+    )
+    run_battery(
+        seeds,
+        GreedyTactical(score_budget=40),
+        GreedyShop(),
+        MarginValue(),
+        str(tmp_path / "decision-only.jsonl"),
+        "decision-only",
+        observer=decision_only,
+    )
+
+    steps = sum(r.episode_length for r in results)
+    assert len(state_only.events) == steps + len(seeds)
+    assert len(decision_only.decisions) == steps
+
+
+def test_observer_sees_the_reset_every_real_step_and_every_decision(tmp_path):
+    """One ``observe`` per reset plus one per step, and one ``observe_decision``
+    per step. ``RolloutValue`` previews heavily via ``get_state``/``load_state``;
+    if the previews leaked into the trace there would be far more events than
+    steps.
+    """
+    observer = RecordingObserver()
+    seeds = load_battery("train")[:2]
+    results = run_battery(
+        seeds,
+        GreedyTactical(score_budget=40),
+        GreedyShop(),
+        RolloutValue(),
+        str(tmp_path / "observed.jsonl"),
+        "observed",
+        observer=observer,
+    )
+
+    steps = sum(r.episode_length for r in results)
+    assert observer.events.count("run_reset") == len(seeds)
+    assert len(observer.events) == steps + len(seeds)
+    assert len(observer.decisions) == steps
+    # The engine action behind a decision is labelled, not swallowed.
+    assert observer.events.count("select_blind") >= 1
+    assert None not in observer.events
+
+
+def test_observer_does_not_move_the_numbers(tmp_path):
+    """Pure-read: the observed run and the unobserved run are the same run."""
+    seeds = load_battery("train")[:3]
+
+    def battery(name, observer):
+        return run_battery(
+            seeds,
+            GreedyTactical(score_budget=40),
+            GreedyShop(),
+            MarginValue(),
+            str(tmp_path / f"{name}.jsonl"),
+            name,
+            observer=observer,
+        )
+
+    plain = battery("plain", None)
+    observed = battery("observed", RecordingObserver())
+
+    fields = [(r.highest_ante, r.won, r.episode_length, r.terminal_reason) for r in plain]
+    assert fields == [
+        (r.highest_ante, r.won, r.episode_length, r.terminal_reason) for r in observed
+    ]
