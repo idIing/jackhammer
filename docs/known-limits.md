@@ -9,10 +9,24 @@
   protocol v1 it *was* a harness limit imposed on every agent, `random-legal` included. Holding it
   fixed keeps the paired difference between the two arms attributable to the shop policy, but it
   means the slate contains no baseline that skips deliberately. `random-legal` skips at random.
+  Measured over the published battery rather than read off the code: neither shop arm ever emits
+  `SkipBlind`, and neither ever uses or sells anything at `ROUND_EVAL` (0 of `random-shop`'s 272
+  consumable and sell actions fall there; all are shop-phase).
 - **Weak baselines:** all three built-ins won 0/240. Mean highest ante separates them, but the slate
   does not represent the field's strongest agents.
-- **Cheapest-Joker policy:** `greedy-shop` buys only Jokers, never evaluates their text or synergy,
-  never rerolls or sells, takes the first pack card, and ignores vouchers and consumables.
+- **Cheapest-Joker policy:** `greedy-shop` buys only Jokers and never evaluates their text, rarity
+  or synergy. It never rerolls, never sells, never redeems a voucher, never uses a consumable — and
+  it **never buys a booster pack**: `GreedyShop._joker_buys` filters shop candidates to
+  `ability.set == "Joker"`, so no `OpenBooster` is ever issued. The pinned engine enters
+  `PACK_OPENING` from exactly two places — `_handle_open_booster`, which requires that action, and
+  `_open_tag_pack` for a tag's pack — and over the whole battery this agent emits neither
+  `OpenBooster` nor `SkipBlind` nor any pack action, so the pack-choice branch of `decide_shop` is
+  unreachable in practice. Over the published battery it emits **6 of the engine's 21 action types
+  across 15,349 decisions**, with zero fallback substitutions, against 16 for `random-shop`.
+  The paired `+1.567` is a clean A/B, but what it prices is *buying the cheapest Joker at all*
+  against an arm that touches most of the shop surface at random — the headline is not "greedy beats
+  random" but "the narrowest agent on the slate beats the widest one". See
+  [declared repertoires](#declared-repertoires) below.
 - **Tactical scan cap:** `GreedyTactical` exact-scores at most `score_budget=300` card subsets per
   play decision. That is exhaustive for a standard 8-card hand (218 subsets of size <=5); above 8 it
   truncates, and because it enumerates small-k first, the subsets it drops are the largest. Hand
@@ -32,6 +46,66 @@
   relabeled as ordinary-distribution policy strength. Sampling and overlap must be reported.
 - **Artifact schema:** v1 validates the stable envelope and preserves the raw decision records by
   reference; it does not cryptographically sign results or fully validate every nested summary field.
+
+## Declared repertoires
+
+Every claim above about what a baseline *does* is a run-time fact, and reading the source cannot
+establish one. The 2026-09-02 audit of `greedy-shop` was a careful code read; it still shipped
+"takes the first pack card", describing a branch that cannot execute, because the policy never buys
+a pack in the first place. Determinism, the engine tests, the paired intervals and the test suite
+all pass on an agent that only ever does six things.
+
+So each built-in baseline now *declares* the action types its description covers
+(`AgentSpec.declared_actions`), and the declaration is checked from two sides.
+
+Against the **runs**: `scripts/evaluate.py` reads the recorded decision stream every run writes.
+Emitting an action the declaration omits fails the evaluation at any sample size; declaring one the
+run never contains fails a complete-battery run, and is reported as a sample-size caveat on a
+`--limit` smoke run. Only a complete battery can distinguish *declined* from *never reached*, so
+that half cannot run in CI.
+
+Against the **source**: `repertoire.scan_source` lists the action types a policy's code can
+construct at all. It runs in milliseconds with no engine and no games, so it runs in CI on every
+push, and it catches the error where it is made rather than the next time somebody publishes a
+number. The two bound the answer from opposite sides — the source is a ceiling, the runs are a
+floor — and an action in the ceiling but not the floor is code that cannot be reached. For
+`greedy-shop` that difference is exactly one action, `PickPackCard`, and
+`tests/test_public_contracts.py` pins it: had the false clause been declared as well as written,
+CI would have rejected it. A policy that builds its action from a computed value (both random arms
+sample the legal-action mask) can construct anything, so the source check is vacuous for it and the
+tests record *that*, rather than passing quietly.
+
+The block below is generated from the registry and checked by the same file, so the table and the
+agent cannot drift apart silently. The prose around it is still prose.
+
+<!-- BEGIN declared-repertoire -->
+| agent | types | declared action types |
+|---|---|---|
+| `greedy-shop` | 6 | `PlayHand` · `Discard` · `SelectBlind` · `CashOut` · `NextRound` · `BuyCard` |
+| `random-legal` | 13 | `PlayHand` · `Discard` · `SelectBlind` · `SkipBlind` · `CashOut` · `NextRound` · `SkipPack` · `SellConsumable` · `PickPackCard` · `SwapHandLeft` · `SwapHandRight` · `SortHandRank` · `SortHandSuit` |
+| `random-shop` | 16 | `PlayHand` · `Discard` · `SelectBlind` · `CashOut` · `Reroll` · `NextRound` · `SkipPack` · `BuyCard` · `SellJoker` · `SellConsumable` · `UseConsumable` · `RedeemVoucher` · `OpenBooster` · `PickPackCard` · `SwapJokersLeft` · `SwapJokersRight` |
+<!-- END declared-repertoire -->
+
+Measured on the 240-seed `train` split at the pinned engine, protocol v2: `greedy-shop` 15,349
+decisions, `random-shop` 9,157, `random-legal` 5,713, all three with **zero** fallback
+substitutions. The reference agent's six, in full:
+
+```
+PlayHand 4,527 · Discard 3,814 · SelectBlind 2,132 · CashOut 1,892 · NextRound 1,892 · BuyCard 1,092
+```
+
+`scripts/evaluate.py` prints the same line for whatever agent it runs, and `summary.repertoire` in
+each result artifact carries the counts, so this table is a summary of the artifacts rather than a
+separate claim about them. Two things a reader should not over-read:
+
+- **A repertoire is not a capability.** `random-legal` samples uniformly from whatever the mask
+  offers, so it *may* reroll or redeem a voucher; it never does, because it survives to a shop in 1
+  of 240 games (one `CashOut`, one `NextRound`). Its 13 types are what this battery lets it show, not the limit of its policy.
+- **Protocol version changes the count.** Under v1 the episode loop auto-played blind selection and
+  cash-out, so those two never appeared in an agent's decision stream; the same `greedy-shop` runs
+  recorded 4 action types and 11,325 decisions. The 4,024-decision difference is exactly the
+  `SelectBlind` and `CashOut` calls v2 hands back to the agent. Repertoire counts are only
+  comparable within one protocol version.
 
 ## The tactical scan cap
 

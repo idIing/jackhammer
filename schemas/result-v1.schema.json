@@ -12,6 +12,11 @@
       "required": ["name", "description", "deterministic"],
       "properties": {
         "name": {"type": "string"},
+        "declared_actions": {
+          "type": ["array", "null"],
+          "items": {"type": "string"},
+          "description": "Action-type names the agent's description claims appear in its decision stream on this battery; null when it publishes no such claim. Checked against summary.repertoire by scripts/evaluate.py."
+        },
         "description": {"type": "string"},
         "slot1": {"type": "string"},
         "slot2": {"type": "string"},

@@ -121,6 +121,7 @@ def test_agent_identity_is_the_published_surface():
         "slot2",
         "tactical",
         "deterministic",
+        "declared_actions",
     }
     # The shared in-blind policy is part of the published identity: it decides
     # every hand this agent plays, so a reader must be able to see it.
@@ -209,3 +210,82 @@ def test_comparison_refuses_different_protocols():
             runs_a=_runs("PVRQ4K5A", 1),
             runs_b=_runs("PVRQ4K5A", 4),
         )
+
+
+# ------------------------------------------------------------------ repertoire
+def _run_with(actions: list[str], *, fallbacks: int = 0) -> dict:
+    """A recorder-shaped run whose decision stream is exactly *actions*."""
+    return {
+        "meta": {"seed": "S", "config_label": "t"},
+        "summary": {"highest_ante": 1, "won": False},
+        "events": [
+            {"step": i, "action": a, "was_fallback": i < fallbacks} for i, a in enumerate(actions)
+        ],
+    }
+
+
+def test_audit_reports_both_directions_of_disagreement():
+    """The two failures are not symmetric and must be named separately.
+
+    An action the description omits is wrong however few seeds ran. An action the
+    description claims and the stream lacks is only wrong once the whole battery has
+    run — which is why the caller, not this function, decides what is fatal.
+    """
+    from jackhammer.bench import repertoire
+
+    runs = [_run_with(["PlayHand", "PlayHand", "Reroll"], fallbacks=1)]
+    rep = repertoire.audit(runs, declared=("PlayHand", "BuyCard"))
+    assert rep["n_decisions"] == 3
+    assert rep["n_fallback"] == 1
+    assert rep["observed"] == {"PlayHand": 2, "Reroll": 1}
+    assert rep["undeclared"] == ["Reroll"]
+    assert rep["unexercised"] == ["BuyCard"]
+
+    clean = repertoire.audit([_run_with(["PlayHand", "BuyCard"])], ("PlayHand", "BuyCard"))
+    assert clean["undeclared"] == [] and clean["unexercised"] == []
+
+
+def test_an_undeclared_agent_is_reported_but_never_contradicted():
+    """A submitted agent that publishes no claim cannot fail the check."""
+    from jackhammer.bench import repertoire
+
+    rep = repertoire.audit([_run_with(["PlayHand"])], declared=None)
+    assert rep["observed"] == {"PlayHand": 1}
+    assert rep["declared"] is rep["undeclared"] is rep["unexercised"] is None
+
+
+def test_the_result_artifact_carries_what_the_agent_did():
+    """The audit travels with the number, not just in the terminal.
+
+    Every behavioural claim this benchmark has had to correct was checkable in a
+    decision stream nobody read. Putting the histogram in the artifact beside the
+    mean is what makes reading it the default.
+    """
+    spec = agent_registry.get("greedy-shop")
+    runs = [_run_with(["PlayHand", "BuyCard", "NextRound"])]
+    result = artifact.build_result(spec=spec, runs=runs, provenance=_stamp())
+    rep = result["summary"]["repertoire"]
+    assert rep["observed"] == {"PlayHand": 1, "NextRound": 1, "BuyCard": 1}
+    # Declared-but-unseen on a one-run fixture: the shape a smoke run produces.
+    assert rep["unexercised"] == ["Discard", "SelectBlind", "CashOut"]
+    assert rep["undeclared"] == []
+    artifact.validate(result)
+
+
+def test_a_partial_run_does_not_call_an_unseen_action_a_mismatch():
+    """Smoke runs must not cry wolf, or submitters stop declaring anything.
+
+    "never emits X" is a claim about a complete battery. On eight seeds the same
+    observation is a sample size, and the report has to say which one it is.
+    """
+    from jackhammer.bench import repertoire
+
+    rep = repertoire.audit([_run_with(["PlayHand"])], ("PlayHand", "BuyCard"))
+    assert "MISMATCH" in repertoire.format_report("a", rep, complete=True)
+    partial = repertoire.format_report("a", rep, complete=False)
+    assert "MISMATCH" not in partial
+    assert "not seen in this partial run" in partial
+
+    # An action the description does not cover is wrong either way.
+    undeclared = repertoire.audit([_run_with(["PlayHand", "Reroll"])], ("PlayHand",))
+    assert "MISMATCH" in repertoire.format_report("a", undeclared, complete=False)

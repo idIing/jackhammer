@@ -28,6 +28,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from jackhammer.bench.repertoire import check_names
 from jackhammer.playground.harness import (
     GreedyShop,
     GreedyTactical,
@@ -65,6 +66,13 @@ class AgentSpec:
             unseeded RNG, which makes its numbers non-reproducible — recorded so
             a reader knows not to expect replay to match. Seeding a stochastic
             policy from the run seed is what buys this back.
+        declared_actions: the action types this agent claims it may emit — the
+            machine-readable form of its prose description. ``evaluate.py``
+            checks it against the recorded decision stream, so a description
+            that names a branch the policy cannot reach fails the run instead of
+            shipping (``jackhammer.bench.repertoire``). ``None`` means the agent
+            publishes no such claim, which is the default for a submitted agent:
+            its repertoire is reported, never enforced.
     """
 
     name: str
@@ -74,6 +82,13 @@ class AgentSpec:
     slot2: str = ""
     tactical: str = ""
     deterministic: bool = True
+    declared_actions: tuple[str, ...] | None = None
+
+    def __post_init__(self) -> None:
+        # A typo'd declaration would read as a permanent mismatch against an agent
+        # that is behaving correctly, so it is rejected at registration instead.
+        if self.declared_actions is not None:
+            object.__setattr__(self, "declared_actions", check_names(self.declared_actions))
 
     def identity(self) -> dict[str, Any]:
         """The agent block embedded in the result artifact."""
@@ -84,6 +99,9 @@ class AgentSpec:
             "slot2": self.slot2,
             "tactical": self.tactical,
             "deterministic": self.deterministic,
+            "declared_actions": (
+                list(self.declared_actions) if self.declared_actions is not None else None
+            ),
         }
 
 
@@ -176,12 +194,30 @@ register(
     AgentSpec(
         name="random-legal",
         description=(
-            "Uniformly-random legal action in every phase, including skipping blinds "
-            "and using consumables before cash-out. The floor."
+            "Uniformly-random legal action in every phase; unlike the shop baselines it "
+            "may skip a blind and may act at cash-out. The floor."
         ),
         make_decider=lambda env, seed: random_decider(random.Random(seed)),
         slot1="random_decider",
         slot2="",
+        # Measured, not derived: its policy is uniform over *whatever the mask offers*,
+        # so its repertoire is a fact about how far the battery lets it get. It reaches
+        # a shop in 1 of 240 games, which is why no shop action but SkipPack appears.
+        declared_actions=(
+            "PlayHand",
+            "Discard",
+            "SelectBlind",
+            "SkipBlind",
+            "CashOut",
+            "NextRound",
+            "SkipPack",
+            "SellConsumable",
+            "PickPackCard",
+            "SwapHandLeft",
+            "SwapHandRight",
+            "SortHandRank",
+            "SortHandSuit",
+        ),
     )
 )
 
@@ -231,6 +267,27 @@ register(
         slot1=RandomShop.name,
         slot2=MarginValue.name,
         tactical=_TACTICAL_LABEL,
+        # Every legal shop action, plus the two decisions its policy fixes. Absent:
+        # SkipBlind (declared abstention) and the four hand-arrangement actions, which
+        # belong to the shared tactical layer and it never uses.
+        declared_actions=(
+            "PlayHand",
+            "Discard",
+            "SelectBlind",
+            "CashOut",
+            "Reroll",
+            "NextRound",
+            "SkipPack",
+            "BuyCard",
+            "SellJoker",
+            "SellConsumable",
+            "UseConsumable",
+            "RedeemVoucher",
+            "OpenBooster",
+            "PickPackCard",
+            "SwapJokersLeft",
+            "SwapJokersRight",
+        ),
     )
 )
 
@@ -245,6 +302,18 @@ register(
         slot1=GreedyShop.name,
         slot2=MarginValue.name,
         tactical=_TACTICAL_LABEL,
+        # Six, and the omissions are the interesting half. `_joker_buys` filters shop
+        # candidates to `ability.set == "Joker"`, so a booster is never bought, PACK_OPENING
+        # is never entered, and the pack branch of `decide_shop` is unreachable code. It
+        # also never rerolls, sells, redeems a voucher, or uses a consumable.
+        declared_actions=(
+            "PlayHand",
+            "Discard",
+            "SelectBlind",
+            "CashOut",
+            "NextRound",
+            "BuyCard",
+        ),
     )
 )
 
