@@ -72,7 +72,15 @@ checked by `tests/test_public_contracts.py`, so the prose and the agent cannot d
 
 Measured on the 240-seed `train` split at the pinned engine, protocol v2: `greedy-shop` 15,349
 decisions, `random-shop` 9,157, `random-legal` 5,713, all three with **zero** fallback
-substitutions. Two things a reader should not over-read:
+substitutions. The reference agent's six, in full:
+
+```
+PlayHand 4,527 · Discard 3,814 · SelectBlind 2,132 · CashOut 1,892 · NextRound 1,892 · BuyCard 1,092
+```
+
+`scripts/evaluate.py` prints the same line for whatever agent it runs, and `summary.repertoire` in
+each result artifact carries the counts, so this table is a summary of the artifacts rather than a
+separate claim about them. Two things a reader should not over-read:
 
 - **A repertoire is not a capability.** `random-legal` samples uniformly from whatever the mask
   offers, so it *may* reroll or redeem a voucher; it never does, because it survives to a shop in 1
