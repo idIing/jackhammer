@@ -56,11 +56,27 @@ a pack in the first place. Determinism, the engine tests, the paired intervals a
 all pass on an agent that only ever does six things.
 
 So each built-in baseline now *declares* the action types its description covers
-(`AgentSpec.declared_actions`), and `scripts/evaluate.py` reads them back out of the recorded
-decision stream every run writes. Emitting an action the declaration omits fails the evaluation at
-any sample size; declaring one the run never contains fails a complete-battery run, and is reported
-as a sample-size caveat on a `--limit` smoke run. The block below is generated from the registry and
-checked by `tests/test_public_contracts.py`, so the prose and the agent cannot drift apart silently.
+(`AgentSpec.declared_actions`), and the declaration is checked from two sides.
+
+Against the **runs**: `scripts/evaluate.py` reads the recorded decision stream every run writes.
+Emitting an action the declaration omits fails the evaluation at any sample size; declaring one the
+run never contains fails a complete-battery run, and is reported as a sample-size caveat on a
+`--limit` smoke run. Only a complete battery can distinguish *declined* from *never reached*, so
+that half cannot run in CI.
+
+Against the **source**: `repertoire.scan_source` lists the action types a policy's code can
+construct at all. It runs in milliseconds with no engine and no games, so it runs in CI on every
+push, and it catches the error where it is made rather than the next time somebody publishes a
+number. The two bound the answer from opposite sides — the source is a ceiling, the runs are a
+floor — and an action in the ceiling but not the floor is code that cannot be reached. For
+`greedy-shop` that difference is exactly one action, `PickPackCard`, and
+`tests/test_public_contracts.py` pins it: had the false clause been declared as well as written,
+CI would have rejected it. A policy that builds its action from a computed value (both random arms
+sample the legal-action mask) can construct anything, so the source check is vacuous for it and the
+tests record *that*, rather than passing quietly.
+
+The block below is generated from the registry and checked by the same file, so the table and the
+agent cannot drift apart silently. The prose around it is still prose.
 
 <!-- BEGIN declared-repertoire -->
 | agent | types | declared action types |

@@ -16,13 +16,27 @@ an agent says it may emit — and this module compares it against the recorded e
   measurable over a complete battery — on eight seeds it means nothing — so it is an
   error there and a warning otherwise.
 
+Both read decisions the agent *chose*. A decision the recorder marks ``was_fallback`` is the
+harness substituting for an agent that produced no legal action, so it is counted in the
+histogram (it happened) and excluded from the two differences (the agent did not choose it).
+All three baselines fall back zero times over the battery, so today the two sets are identical.
+
+``scan_source`` is the same question asked of the source instead of the runs: which actions can
+this policy *construct at all*. It runs in milliseconds with no engine and no games, so it belongs
+in CI, where the battery check cannot go. The two bound the answer from opposite sides — the
+source gives a ceiling, the runs give a floor — and an action in the ceiling but not the floor is
+code that cannot be reached. That is exactly the pack-choice branch this module was written for.
+
 An agent that declares nothing (``declared_actions=None``, the default for submitted
 agents) is only reported on, never failed. The gate is for published claims.
 """
 
 from __future__ import annotations
 
+import ast
 from collections import Counter
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from jackhammer.selfplay.recorder import ACTION_NAMES
@@ -58,6 +72,16 @@ def observe(runs: list[dict[str, Any]]) -> Counter[str]:
     return hist
 
 
+def _chosen(runs: list[dict[str, Any]]) -> Counter[str]:
+    """Histogram over decisions the agent itself made (``was_fallback`` false)."""
+    hist: Counter[str] = Counter()
+    for run in runs:
+        for ev in run.get("events") or []:
+            if not ev.get("was_fallback"):
+                hist[str(ev.get("action", "?"))] += 1
+    return hist
+
+
 def count_fallbacks(runs: list[dict[str, Any]]) -> int:
     """Decisions the harness substituted for because the agent produced no legal action."""
     return sum(1 for run in runs for ev in (run.get("events") or []) if ev.get("was_fallback"))
@@ -70,6 +94,7 @@ def audit(runs: list[dict[str, Any]], declared: tuple[str, ...] | None) -> dict[
     ``declared``/``undeclared``/``unexercised`` all ``None``: nothing to contradict.
     """
     hist = observe(runs)
+    chosen = _chosen(runs)
     out: dict[str, Any] = {
         "n_decisions": int(sum(hist.values())),
         "n_fallback": count_fallbacks(runs),
@@ -80,8 +105,11 @@ def audit(runs: list[dict[str, Any]], declared: tuple[str, ...] | None) -> dict[
         "unexercised": None,
     }
     if declared is not None:
-        out["undeclared"] = [a for a in ALL_ACTIONS if hist[a] and a not in declared]
-        out["unexercised"] = [a for a in declared if not hist[a]]
+        # Against `chosen`, not `hist`: blaming an agent for an action the harness
+        # substituted would be a false accusation, and crediting it with one would be a
+        # false alibi.
+        out["undeclared"] = [a for a in ALL_ACTIONS if chosen[a] and a not in declared]
+        out["unexercised"] = [a for a in declared if not chosen[a]]
     return out
 
 
@@ -139,3 +167,103 @@ def docs_block() -> str:
         if spec.declared_actions is not None
     ]
     return "\n".join(["| agent | types | declared action types |", "|---|---|---|", *rows])
+
+
+# --------------------------------------------------------------------------- static
+@dataclass(frozen=True)
+class StaticScan:
+    """What a policy's *source* can construct, as opposed to what a run contains.
+
+    Attributes:
+        actions: action types the code names outright in a ``FactoredAction(...)``.
+        dynamic: it builds an action from a computed value — sampling the legal-action
+            mask, say — so the real ceiling is every action and ``actions`` is a floor.
+        fallback: it can delegate to ``get_fallback_action``, which may return anything.
+            Recorded separately because such a decision is marked ``was_fallback`` and is
+            the harness's choice, not the agent's, so it does not widen what the agent
+            *claims*.
+    """
+
+    actions: frozenset[str]
+    dynamic: bool
+    fallback: bool
+
+    def __or__(self, other: StaticScan) -> StaticScan:
+        """Union, for a policy composed of several classes."""
+        return StaticScan(
+            actions=self.actions | other.actions,
+            dynamic=self.dynamic or other.dynamic,
+            fallback=self.fallback or other.fallback,
+        )
+
+
+_EMPTY_SCAN = StaticScan(frozenset(), False, False)
+
+
+def _action_constants(tree: ast.Module) -> dict[str, str]:
+    """Module-level ``_NAME = int(ActionType.X)`` / ``= ActionType.X`` / ``= <int>``."""
+    out: dict[str, str] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or not isinstance(node.targets[0], ast.Name):
+            continue
+        name = _action_of(node.value, {})
+        if name:
+            out[node.targets[0].id] = name
+    return out
+
+
+def _action_of(node: ast.expr, consts: dict[str, str]) -> str | None:
+    """Resolve one expression to an action-type name, or None if it is not one."""
+    if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "int" and node.args:
+        return _action_of(node.args[0], consts)
+    if isinstance(node, ast.Attribute) and node.attr in ALL_ACTIONS:
+        return node.attr
+    if isinstance(node, ast.Name):
+        return consts.get(node.id)
+    if isinstance(node, ast.Constant) and isinstance(node.value, int):
+        return ACTION_NAMES.get(node.value)
+    return None
+
+
+def scan_source(path: str | Path) -> dict[str, StaticScan]:
+    """Scan one module for what each top-level class or function can construct.
+
+    Deliberately syntactic: it resolves ``FactoredAction(action_type=...)`` against the
+    module's own action constants and gives up honestly rather than guessing. Giving up
+    sets ``dynamic``, which widens the ceiling to everything — the safe direction, since a
+    ceiling that is too high can only make a check vacuous, never make it accuse wrongly.
+    """
+    tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+    consts = _action_constants(tree)
+    out: dict[str, StaticScan] = {}
+    for node in tree.body:
+        if not isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        actions: set[str] = set()
+        dynamic = fallback = False
+        for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
+            func = getattr(call.func, "id", "") or getattr(call.func, "attr", "")
+            if func == "get_fallback_action":
+                fallback = True
+            if func != "FactoredAction":
+                continue
+            kw = next((k for k in call.keywords if k.arg == "action_type"), None)
+            name = _action_of(kw.value, consts) if kw is not None else None
+            if name is None:
+                dynamic = True
+            else:
+                actions.add(name)
+        out[node.name] = StaticScan(frozenset(actions), dynamic, fallback)
+    return out
+
+
+def scan_union(path: str | Path, names: list[str]) -> StaticScan:
+    """Union the scans of *names* in one module. Raises on a name that is not there."""
+    scans = scan_source(path)
+    missing = [n for n in names if n not in scans]
+    if missing:
+        raise KeyError(f"{path}: no top-level definition(s) named {missing}")
+    out = _EMPTY_SCAN
+    for n in names:
+        out = out | scans[n]
+    return out

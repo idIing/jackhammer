@@ -337,3 +337,105 @@ def test_a_declaration_cannot_name_a_non_action():
             make_decider=lambda e, s: None,
             declared_actions=("PlayHand", "BuyJoker"),
         )
+
+
+# The three baselines' policies, as source-level components. `greedy-shop` and
+# `random-shop` are compositions, so their ceiling is the union of the parts.
+_POLICY_SOURCES = {
+    "greedy-shop": (
+        "playground/harness.py",
+        ["GreedyTactical", "GreedyShop", "MarginValue", "build_decider"],
+    ),
+    "random-shop": (
+        "playground/harness.py",
+        ["GreedyTactical", "RandomShop", "MarginValue", "build_decider"],
+    ),
+    "random-legal": ("selfplay/runner.py", ["random_decider"]),
+}
+_SRC = ROOT / "src" / "jackhammer"
+
+
+def test_no_baseline_declares_an_action_its_code_cannot_construct():
+    """The cheap half of the gate, and the only half that fits in CI.
+
+    Checking a declaration against a *run* needs the whole battery, which is minutes.
+    Checking it against the *source* is milliseconds and no games, and it catches the
+    error at the moment someone writes it rather than the next time someone publishes a
+    number. A policy that builds its action from a computed value can construct anything,
+    so the check is vacuous there and says so instead of passing quietly.
+    """
+    from jackhammer.bench import agents
+    from jackhammer.bench.repertoire import scan_union
+
+    for name, (rel, parts) in _POLICY_SOURCES.items():
+        scan = scan_union(_SRC / rel, parts)
+        declared = set(agents.get(name).declared_actions)
+        if scan.dynamic:
+            continue  # covered by the dynamic-arm test below
+        impossible = declared - scan.actions
+        assert not impossible, (
+            f"{name} declares {sorted(impossible)}, which its source never constructs"
+        )
+
+
+def test_greedy_shops_only_unreachable_branch_is_the_pack_choice():
+    """The defect that started this, pinned where it can be caught without running.
+
+    The source can construct seven actions; the battery records six. The odd one out is
+    `PickPackCard`: `decide_shop` handles `PACK_OPENING` correctly, and `_joker_buys`
+    filters shop candidates to Jokers so no booster is ever bought, so that branch cannot
+    execute. Reachable-in-code minus declared is therefore exactly the dead branch, and
+    this test fails if that set changes in either direction — a new dead branch, or the
+    pack branch becoming live.
+    """
+    from jackhammer.bench import agents
+    from jackhammer.bench.repertoire import scan_union
+
+    rel, parts = _POLICY_SOURCES["greedy-shop"]
+    scan = scan_union(_SRC / rel, parts)
+    declared = set(agents.get("greedy-shop").declared_actions)
+
+    assert not scan.dynamic, "greedy-shop names every action it builds; keep it that way"
+    assert scan.actions - declared == {"PickPackCard"}, sorted(scan.actions - declared)
+    assert declared - scan.actions == set()
+
+
+def test_the_random_arms_are_vacuous_for_a_stated_reason():
+    """Both sample from the legal-action mask, so their source ceiling is everything.
+
+    Pinned rather than left implicit: if either is ever rewritten to name the actions it
+    builds, this fails, and the static check above becomes real for it and should be
+    tightened rather than silently staying vacuous.
+    """
+    from jackhammer.bench.repertoire import scan_union
+
+    for name in ("random-shop", "random-legal"):
+        rel, parts = _POLICY_SOURCES[name]
+        assert scan_union(_SRC / rel, parts).dynamic, name
+
+
+def test_a_fallback_decision_is_not_blamed_on_the_agent():
+    """`was_fallback` means the harness substituted, so it is not the agent's claim.
+
+    It stays in the histogram, because it happened. It stays out of both differences,
+    because an agent must not be accused of an action it did not choose, nor credited
+    with one it did not choose. All three baselines fall back zero times, so this only
+    matters the day one does.
+    """
+    from jackhammer.bench import repertoire
+
+    runs = [
+        {
+            "meta": {"seed": "S"},
+            "summary": {"highest_ante": 1, "won": False},
+            "events": [
+                {"step": 0, "action": "PlayHand", "was_fallback": False},
+                {"step": 1, "action": "Reroll", "was_fallback": True},
+            ],
+        }
+    ]
+    rep = repertoire.audit(runs, declared=("PlayHand",))
+    assert rep["observed"] == {"PlayHand": 1, "Reroll": 1}
+    assert rep["n_fallback"] == 1
+    assert rep["undeclared"] == []
+    assert rep["unexercised"] == []
