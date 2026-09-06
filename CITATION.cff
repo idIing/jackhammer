@@ -4,7 +4,7 @@ title: "Jackhammer: a paired Balatro agent benchmark"
 type: software
 authors:
   - name: "idIing"
-version: 0.1.0
-date-released: 2026-09-02
+version: 1.1.0
+date-released: 2026-09-05
 license: MIT
 repository-code: "https://github.com/idIing/jackhammer"

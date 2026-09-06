@@ -22,8 +22,8 @@
   `_open_tag_pack` for a tag's pack — and over the whole battery this agent emits neither
   `OpenBooster` nor `SkipBlind` nor any pack action, so the pack-choice branch of `decide_shop` is
   unreachable in practice. Over the published battery it emits **6 of the engine's 21 action types
-  across 15,349 decisions**, with zero fallback substitutions, against 16 for `random-shop`.
-  The paired `+1.567` is a clean A/B, but what it prices is *buying the cheapest Joker at all*
+  across 15,307 decisions**, with zero fallback substitutions, against 16 for `random-shop`.
+  The paired `+1.558` is a clean A/B, but what it prices is *buying the cheapest Joker at all*
   against an arm that touches most of the shop surface at random — the headline is not "greedy beats
   random" but "the narrowest agent on the slate beats the widest one". See
   [declared repertoires](#declared-repertoires) below.
@@ -34,10 +34,10 @@
   [the tactical scan cap](#the-tactical-scan-cap) below.
 - **Scan-cap asymmetry:** the shared tactical layer is not automatically a symmetric control.
   `greedy-shop` truncates 2.4x as often as `random-shop`, and re-running the battery with the cap
-  raised moves the paired delta from `+1.567` to `+1.667` — a paired difference-of-differences of
+  raised moves the paired delta from `+1.558` to `+1.658` — a paired difference-of-differences of
   **`+0.100 [+0.046, +0.167]`** boot-95, which excludes zero, so the published number slightly
-  *understates* the shop contrast. `+1.667` still falls inside the published interval
-  `[+1.400, +1.729]`, so no v1 conclusion changes.
+  *understates* the shop contrast. `+1.658` still falls inside the published interval
+  `[+1.396, +1.721]`, so no published conclusion changes.
 - **Published battery:** the 240 training seeds are public and therefore overfittable. The old
   validation split has already been consumed and is retired, not a reusable secret leaderboard.
 - **No live client:** the benchmark and text run inspector work headlessly. This repository does not
@@ -46,6 +46,9 @@
   relabeled as ordinary-distribution policy strength. Sampling and overlap must be reported.
 - **Artifact schema:** v1 validates the stable envelope and preserves the raw decision records by
   reference; it does not cryptographically sign results or fully validate every nested summary field.
+- **The preview is not the engine on every board.** `preview_play` sets every key `score_hand`
+  reads directly, and v2.1 fixed the four it got wrong — but it builds a *partial* mirror of the
+  live state, and engine code other than the scorer runs against that mirror. See below.
 
 ## Declared repertoires
 
@@ -86,12 +89,12 @@ agent cannot drift apart silently. The prose around it is still prose.
 | `random-shop` | 16 | `PlayHand` · `Discard` · `SelectBlind` · `CashOut` · `Reroll` · `NextRound` · `SkipPack` · `BuyCard` · `SellJoker` · `SellConsumable` · `UseConsumable` · `RedeemVoucher` · `OpenBooster` · `PickPackCard` · `SwapJokersLeft` · `SwapJokersRight` |
 <!-- END declared-repertoire -->
 
-Measured on the 240-seed `train` split at the pinned engine, protocol v2: `greedy-shop` 15,349
+Measured on the 240-seed `train` split at the pinned engine, protocol v2.1: `greedy-shop` 15,307
 decisions, `random-shop` 9,157, `random-legal` 5,713, all three with **zero** fallback
 substitutions. The reference agent's six, in full:
 
 ```
-PlayHand 4,527 · Discard 3,814 · SelectBlind 2,132 · CashOut 1,892 · NextRound 1,892 · BuyCard 1,092
+PlayHand 4,508 · Discard 3,803 · SelectBlind 2,128 · CashOut 1,888 · NextRound 1,888 · BuyCard 1,092
 ```
 
 `scripts/evaluate.py` prints the same line for whatever agent it runs, and `summary.repertoire` in
@@ -107,6 +110,31 @@ separate claim about them. Two things a reader should not over-read:
   `SelectBlind` and `CashOut` calls v2 hands back to the agent. Repertoire counts are only
   comparable within one protocol version.
 
+## The preview is not the engine on every board
+
+`GreedyTactical` ranks candidate plays with `preview_play`
+(`src/jackhammer/playground/exact_score.py`), which reconstructs by hand the synthetic `game_state`
+the engine's `_handle_play_hand` passes to `score_hand`, and then calls the engine's own scorer.
+Protocol v2.1 repaired the four keys the scorer reads that it had wrong, and
+`tests/test_exact_score.py` holds that line. **What is not repaired is the mirror itself**, and the
+gap shows wherever engine code *other than* `score_hand` runs against it. Three reproducible
+divergences, all on The Hook, which discards held cards during `Blind:press_play` and so runs
+discard handlers against the synthetic dict:
+
+| board | wrong scorer input | preview | engine |
+|---|---|---:|---:|
+| Hook + Mail-In Rebate + Bull | `money` 4, not 14 | 24 | 44 |
+| Hook + Castle | no discard-time suit target | 16 | 19 |
+| Hook destroys a negative Ramen + Stencil | `joker_slots` 6, not 5 | 96 | 80 |
+
+Two distinct causes: the synthetic dict does not carry the nested state a discard handler reads,
+and `joker_slots` is copied from the *pre*-`press_play` live value, so a joker destroyed during the
+press does not shrink it. Neither is new in v2.1 — both predate the published v1 numbers — and
+neither is reached by any position the frozen battery visits, which is why the differential tests
+do not catch them. They are a live hazard for an agent that meets a Hook board with one of those
+jokers, and a contribution surface: the durable fix is to build `synth` from the live state rather
+than key by key.
+
 ## The tactical scan cap
 
 **How it degrades.** Enumeration is small-k first and stops at the budget, so severity is a ladder,
@@ -116,10 +144,10 @@ can be selected and only high card, pair and three of a kind stay reachable at a
 in ordinary play — Juggler +1, Troubadour +2, the Paint Brush and Palette vouchers +1 each, and
 transiently Turtle Bean +5 and the Juggle Tag +3.
 
-**How often.** Instrumenting the true hand size at every scan, the cap binds on 576 of 8341
-`greedy-shop` play scans (6.91%, in 30/240 games) against 151 of 5176 for `random-shop` (2.92%,
-14/240); a scan runs on every in-blind decision, discards included. The instrumentation is pure
-observation — the seeds re-run under it reproduce their published `highest_ante`, 16/16
+**How often.** Instrumenting the true hand size at every scan, the cap binds on 576 of 8311
+`greedy-shop` play scans (6.93%, in 30/240 games) against 151 of 5176 for `random-shop` (2.92%,
+14/240) — 2.4x as often; a scan runs on every in-blind decision, discards included. The
+instrumentation is pure observation — the seeds re-run under it reproduce their published `highest_ante`, 16/16
 spot-checked — but it is not shipped, because the published decision records store the subset
 played, not the hand it was drawn from. These counts supersede the 19/240 and 8/240 published at
 launch, which came from a terminal-state estimate that omitted Troubadour and could not see
@@ -142,12 +170,12 @@ uv run python scripts/evaluate.py --agent greedy-shop --vs random-shop \
 
 Any budget other than the frozen `300` is stamped `jackhammer/tactical-sweep/v1` with
 `scope: diagnostic`, and the result's `agent.tactical` records the budget that actually ran, so a
-sweep can never be read as a v1 number. Doing so shifts `greedy-shop` by +0.104 ante
+sweep can never be read as a headline number. Doing so shifts `greedy-shop` by +0.104 ante
 `[+0.046, +0.175]` and `random-shop` by +0.004 `[+0.000, +0.013]`, and changes the outcome of 13/240
-seeds against 1/240. The cost is concentrated rather than diffuse: on the 201 seeds that never
-truncate the difference-of-differences is exactly zero with zero variance — as it must be, since an
-untruncated scan enumerates the same subsets at either budget — while the 39 exposed seeds shift
-`+0.615 [+0.308, +0.974]`.
+seeds against 1/240. The cost is concentrated rather than diffuse: on the 201 seeds where the cap
+never binds for either arm the difference-of-differences is exactly zero with zero variance — as it
+must be, since an untruncated scan enumerates the same subsets at either budget — while the 39
+exposed seeds shift `+0.615 [+0.308, +0.974]`.
 
 **The worst case.** The Psychic scores any play of fewer than five cards as zero (jackdaw's
 `h_size_ge=5` boss debuff), and at a true hand size of 10 or more the cap enumerates no five-card
@@ -165,10 +193,11 @@ uv run python scripts/inspect_run.py data/bench/greedy-shop.jsonl --seed 657P5QG
 which prints three `High Card score=0` plays.
 
 **Why the frozen protocol keeps it.** Raising the cap moves published numbers, so it is a question
-for the next protocol version — v3 — and not a patch to the current one. The outcome plateaus at `score_budget=2000` (mean highest ante 3.308, unchanged at 4000, 8000
+for the next protocol version — v3 — and not a point release to the current one. The outcome
+plateaus at `score_budget=2000` (mean highest ante 3.300, unchanged at 4000, 8000
 and 16000), and 2379 — every subset of size <=5 of the largest hand this battery dealt, 13
 cards — is the budget above which no scan in these runs can truncate at all. Going from 300 to 8000
-scans 7.4% more combos for 14.5% more wall clock (82.9s -> 94.9s, 14 workers).
+scans 9.6% more combos for 9.6% more wall clock (63.6s -> 69.7s, 14 workers, this machine).
 
 **If you are submitting an agent.** An agent with its own tactical layer is not subject to the cap,
 but its measured margin over `greedy-shop` still carries this handicap on the exposed seeds. An

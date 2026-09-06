@@ -32,13 +32,25 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any
 
-# Bump when the *meaning* of a stamped field changes, not when a value changes.
+# Two kinds of bump, and the shape of the string says which. A MAJOR bump means a
+# clause of the protocol changed meaning, so the questions the two versions answer are
+# different and their numbers are not comparable. A POINT bump means the contract is
+# untouched but the conditions under it moved -- a new engine pin, a corrected defect
+# in the evaluation machinery -- so every published figure is re-baselined while still
+# answering the same question. Neither is triggered by a value that is already stamped
+# on its own (a battery digest, a runtime version).
 #
 # v2 (2026-09-04): the episode loop stopped auto-playing blind select and cash-out,
 # so an agent's action set is now the engine's. Every v1 number was produced by an
 # agent that could not skip a blind or use a consumable before the shop was rolled.
 # v1 and v2 artifacts are not comparable; see docs/protocol-v2.md § What changed.
-PROTOCOL = "jackhammer/v2"
+#
+# v2.1 (2026-09-05): the engine pin moved to the rebased fork, and `preview_play` --
+# which GreedyTactical ranks every candidate play through -- stopped handing the
+# scorer four game_state keys whose values the engine sets differently. The pin alone
+# would not have bumped this; the scorer sits inside the reference agent's play
+# selection. See docs/protocol-v2.md § What changed in v2.1.
+PROTOCOL = "jackhammer/v2.1"
 
 # A run whose shared tactical budget is not the frozen cap is not a benchmark result.
 # Stamped separately so a sweep can never be mistaken for the benchmark number.

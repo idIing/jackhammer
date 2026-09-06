@@ -49,4 +49,7 @@ expectation. Generally useful fixes should go upstream to Jackdaw when practical
 
 Keep changes focused. Include the commands you ran and their outcomes. Do not mix a protocol change
 with an agent result or unrelated cleanup. Changes to the engine pin, v1 battery, primary metric,
-holdout rule, baseline slate, or evaluation procedure require a new protocol version.
+holdout rule, baseline slate, or evaluation procedure require a new protocol version — a point
+release (v2.*x*) when the contract is untouched and only the numbers move, a major one when a
+clause changes meaning. [The protocol](docs/protocol-v2.md) states the rule and records what each
+release moved.

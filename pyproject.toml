@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jackhammer-benchmark"
-version = "1.0.0"
+version = "1.1.0"
 description = "A reproducible, paired Balatro agent benchmark on the Jackdaw simulator"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -16,7 +16,7 @@ dependencies = [
     # installs a stranger's package and `import jackdaw.env` fails at the first agent.
     # The commit is the one protocol v2 section 1 names: pinning it here is what makes
     # a pip-installed kit produce an attributable result rather than a warning.
-    "jackdaw @ git+https://github.com/idIing/jackdaw-balatro.git@4d6f19d9fe73f96603412a59ad5eab16d08937e7",
+    "jackdaw @ git+https://github.com/idIing/jackdaw-balatro.git@de733ebd494a5da71fb7049b3b6b18ecd039786c",
     "numpy>=1.24",
 ]
 

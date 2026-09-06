@@ -8,9 +8,9 @@ this repository ships no live-game cross-check.
 
 The bank is split ``train`` (240) / ``val`` (60), disjoint and dup-free. The ``val``
 slice is retired: it was consumed during development and is gated behind an
-explicit CLI flag. v1 evaluations use ``train``.
+explicit CLI flag. Headline evaluations use ``train``.
 
-Protocol: ``docs/protocol-v1.md``.
+Protocol: ``docs/protocol-v2.md``.
 """
 
 from __future__ import annotations

@@ -32,8 +32,8 @@ uv run python scripts/evaluate.py \
   --dataset path/to/dataset.json --split sample
 ```
 
-Artifacts from this route use protocol `jackhammer/dataset-eval/v2` and dataset scope `diagnostic`.
-They cannot be paired with `jackhammer/v2` artifacts.
+Artifacts from this route use protocol `jackhammer/dataset-eval/v2.1` and dataset scope `diagnostic`.
+They cannot be paired with `jackhammer/v2.1` artifacts.
 
 ## Coverage studies
 
