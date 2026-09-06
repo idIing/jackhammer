@@ -4,14 +4,27 @@ Current revision: **v2.1**, frozen on 2026-09-05. Artifacts stamp `jackhammer/v2
 Supersedes [protocol v1](protocol-v1.md), which stays published so existing `jackhammer/v1`
 artifacts remain interpretable.
 
-**How this document is versioned.** The contract is items 1-7. Changing what one of them *means* —
-the action set, the primary metric, the comparison procedure, the battery, the holdout rule, the
-slate — creates **v3**, and this document is then frozen and superseded the way v1 was. Moving the
-engine pin, or correcting a defect in the evaluation machinery, changes no clause but re-baselines
-every published figure: that is a **point release**, v2.*x*, edited into this document with the
-numbers it moved recorded in § What changed. Both kinds are a new protocol version and both are
-stamped, so no artifact is ever ambiguous about which conditions produced it; the difference is that
-a v2.0 and a v2.1 number answer the same question, and a v2 and a v3 number do not.
+**How this document is versioned — amended at v2.1.** As frozen at v2.0 this document said that
+changing *any* numbered item creates v3. Read literally that makes every engine re-pin a major
+version, because item 1 names a commit; the number would then inflate on routine maintenance while
+telling a reader nothing about comparability. The rule is now split by *what* moved rather than by
+whether a clause was edited:
+
+- **Major — v3**, and this document is frozen and superseded the way v1 was: a clause changes what
+  it *means*. The action set, the primary metric, the comparison procedure, the battery, the
+  holdout rule, the slate, or a deliberate change to how a baseline plays.
+- **Point — v2.*x***, edited into this document: the contract is unchanged and the conditions
+  under it move. The engine pin advances, or a defect in the evaluation machinery is corrected.
+  Every published figure is re-baselined and § What changed records what moved.
+
+Both are a new protocol version and both are stamped, so no artifact is ever ambiguous about which
+conditions produced it. The difference is what a reader may do with two numbers: v2.0 and v2.1 ask
+the same question of two different apparatus, v2 and v3 ask different questions.
+
+**Being explicit about what that reclassifies.** v2.1 edits the commit in item 1, and it changes how
+`greedy-shop` plays by repairing the scorer it ranks candidate plays with. Under the rule as frozen
+at v2.0 that was v3. It is a point release under the rule above, and amending the rule is this
+release's only change to the contract's own text — recorded here rather than made quietly.
 
 Point releases so far: **v2.1** (2026-09-05) — engine re-pin and a scorer fidelity fix, § What
 changed in v2.1.
@@ -37,13 +50,19 @@ changed in v2.1.
 
 ## What changed in v2.1
 
-Two changes, both of which move published numbers and neither of which touches a clause above.
+Two changes, both of which move published numbers. Between them they edit item 1's commit and
+change how the reference agent plays; § How this document is versioned says why that is a point
+release and not v3.
 
 **The engine pin moved** from `4d6f19d` to `de733eb`. The fork this benchmark runs on was rebased
 onto canonical Jackdaw `8712c1e`, taking eleven upstream commits — among them an O(n²) hot-loop fix
 in `get_x_same` and stake-sticker flag handling — and dropping two of its own that upstream had
-since absorbed. Both upstream commits touching scoring-relevant code read as exact-output, and they
-are. Run on its own — new pin, scorer untouched — the battery returns `greedy-shop` 3.204,
+since absorbed. Neither upstream commit touching scoring-relevant code changes an output *at this
+battery's configuration*: the `get_x_same` change is exact-output by construction, and the
+stake-sticker change only moves where the enable flags are read, which at item 3's White Stake
+enables nothing under either reading. At Gold Stake the sticker change is a real behaviour change,
+so the claim is scoped to the published configuration rather than to the commits. Run on its own —
+new pin, scorer untouched — the battery returns `greedy-shop` 3.204,
 `random-shop` 1.637, paired `+1.567 [+1.400, +1.729]`, 15,349 decisions: **the v2.0 headline to the
 digit.** Everything that moves below is therefore the second change, not the pin.
 
@@ -76,10 +95,12 @@ the tactical enumerates.
 | wins, all three agents | 0/240 | 0/240 |
 
 Only `greedy-shop` moves, and that is the expected shape. `random-legal` never runs the tactical
-layer at all. `random-shop` does, but a corrected key only changes a preview on a board that reads
-it, and across the battery `random-shop`'s recorded end-of-run inventories never once hold any of
-the five jokers concerned, where `greedy-shop`'s do in 23 of 240 runs — it dies too early to buy
-them. Its per-seed outcomes and its whole decision histogram are unchanged.
+layer at all. `random-shop` does, and a corrected key only changes a preview on a board that reads
+it — so what matters is whether an arm ever holds one of the five jokers *while playing a hand*.
+Replaying the decision streams: `greedy-shop` does in **25 of 240** runs, `random-shop` in **none**.
+It is not that it never buys them; it acquires one in 5 runs (`K1U9J9UF`, `Q358C3MG`, `K9ADQ6YV`
+Mr. Bones, `EZG9JGQS`, `JBVSIWHI` Loyalty Card) and sells each before it reaches a play decision.
+Its per-seed outcomes and its whole decision histogram are unchanged.
 
 `build_comparison` refuses to pair arms whose engine commits differ, so a v2.0 artifact and a v2.1
 artifact cannot be silently joined. Read `provenance.engine.commit` before comparing anything.

@@ -226,3 +226,49 @@ def test_preview_total_matches_the_engine_for_every_legal_play(seed, start, limi
             f"regression it was pinned to. Re-pin it: walk the seed, find a position "
             f"whose board holds one of {sorted(_KEY_READING_JOKERS)}, and move the window."
         )
+
+
+def test_the_repaired_keys_are_read_from_the_state_not_hard_coded():
+    """Sentinel values must travel from the live state through to the scorer.
+
+    The differential tests above cannot catch a constant. No baseline ever skips a
+    blind, so ``skips`` is 0 at every position this battery reaches; ``chips`` is 0
+    on the first hand of every round and the counters are small. A ``preview_play``
+    that wrote ``synth["skips"] = 0`` instead of reading ``gs`` would pass every
+    other test in this file. This one puts a value in the live state that the
+    battery never produces and asserts the scorer is handed it.
+    """
+    import copy
+
+    real = exact_score.score_hand
+    captured: dict[str, object] = {}
+
+    def spy(*args, **kwargs):
+        captured.update(kwargs["game_state"])
+        return real(*args, **kwargs)
+
+    sentinels = {"skips": 7, "chips": 4321, "hands_played": 41}
+    checked = 0
+
+    def visit(env, mask):
+        nonlocal checked
+        if checked:
+            return
+        gs = copy.deepcopy(env._adapter.raw_state)
+        gs.update(sentinels)
+        gs["current_round"]["hands_played"] = 3
+        combo = tuple(_enumerate_play_combos(_legal_cards(mask), mask, 300)[0])
+
+        exact_score.score_hand = spy
+        try:
+            preview_play(gs, combo)
+        finally:
+            exact_score.score_hand = real
+
+        for key, value in sentinels.items():
+            assert captured[key] == value, f"{key} did not reach the scorer"
+        assert captured["current_round_hands_played"] == 3
+        checked = 1
+
+    _walk(SEEDS[0], visit, limit=1)
+    assert checked, f"no position reached on {SEEDS[0]}"

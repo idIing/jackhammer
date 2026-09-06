@@ -46,6 +46,9 @@
   relabeled as ordinary-distribution policy strength. Sampling and overlap must be reported.
 - **Artifact schema:** v1 validates the stable envelope and preserves the raw decision records by
   reference; it does not cryptographically sign results or fully validate every nested summary field.
+- **The preview is not the engine on every board.** `preview_play` sets every key `score_hand`
+  reads directly, and v2.1 fixed the four it got wrong — but it builds a *partial* mirror of the
+  live state, and engine code other than the scorer runs against that mirror. See below.
 
 ## Declared repertoires
 
@@ -106,6 +109,31 @@ separate claim about them. Two things a reader should not over-read:
   recorded 4 action types and 11,325 decisions. The 4,024-decision difference is exactly the
   `SelectBlind` and `CashOut` calls v2 hands back to the agent. Repertoire counts are only
   comparable within one protocol version.
+
+## The preview is not the engine on every board
+
+`GreedyTactical` ranks candidate plays with `preview_play`
+(`src/jackhammer/playground/exact_score.py`), which reconstructs by hand the synthetic `game_state`
+the engine's `_handle_play_hand` passes to `score_hand`, and then calls the engine's own scorer.
+Protocol v2.1 repaired the four keys the scorer reads that it had wrong, and
+`tests/test_exact_score.py` holds that line. **What is not repaired is the mirror itself**, and the
+gap shows wherever engine code *other than* `score_hand` runs against it. Three reproducible
+divergences, all on The Hook, which discards held cards during `Blind:press_play` and so runs
+discard handlers against the synthetic dict:
+
+| board | wrong scorer input | preview | engine |
+|---|---|---:|---:|
+| Hook + Mail-In Rebate + Bull | `money` 4, not 14 | 24 | 44 |
+| Hook + Castle | no discard-time suit target | 16 | 19 |
+| Hook destroys a negative Ramen + Stencil | `joker_slots` 6, not 5 | 96 | 80 |
+
+Two distinct causes: the synthetic dict does not carry the nested state a discard handler reads,
+and `joker_slots` is copied from the *pre*-`press_play` live value, so a joker destroyed during the
+press does not shrink it. Neither is new in v2.1 — both predate the published v1 numbers — and
+neither is reached by any position the frozen battery visits, which is why the differential tests
+do not catch them. They are a live hazard for an agent that meets a Hook board with one of those
+jokers, and a contribution surface: the durable fix is to build `synth` from the live state rather
+than key by key.
 
 ## The tactical scan cap
 

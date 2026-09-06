@@ -87,12 +87,22 @@ def preview_play(gs: dict[str, Any], indices: tuple[int, ...]) -> ScoreResult:
     flags, ``_press_play`` boss effects (The Hook consumes rng + moves held
     cards), the Group-A game_state keys, then the engine's ``score_hand``.
 
-    Every key ``score_hand`` reads out of ``game_state`` (scoring.py:437-458,
-    535, 908) is set here, with the value the engine would hold at the moment it
-    calls the scorer -- which for the two ``hands_played`` counters is the
-    PRE-increment value. An absent or stale key does not raise; it defaults, and
-    the preview then silently disagrees with the engine on exactly the boards
-    that read it.
+    Every key ``score_hand`` reads *directly* out of ``game_state``
+    (scoring.py:437-458, 535, 908) is set here, with the value the engine would
+    hold at the moment it calls the scorer -- which for the two ``hands_played``
+    counters is the PRE-increment value. An absent or stale key does not raise;
+    it defaults, and the preview then silently disagrees with the engine on
+    exactly the boards that read it.
+
+    That is a statement about the scorer's own inputs, **not** a guarantee of
+    exactness on every board. ``synth`` is a partial mirror of the live state,
+    and the gap shows wherever engine code other than ``score_hand`` runs
+    against it: ``_press_play`` hands ``synth`` to The Hook's discard handlers,
+    which read state this dict does not carry, and ``joker_slots`` below is
+    copied from the *pre*-``_press_play`` live value, so a joker destroyed
+    during the press does not shrink it. Three reproducible Hook divergences are
+    recorded under "The preview is not the engine on every board" in
+    ``docs/known-limits.md``.
     """
     hand: list[Card] = gs.get("hand", [])
     if not indices or not hand:
