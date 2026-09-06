@@ -24,14 +24,19 @@ install -> run a baseline -> add an agent -> compare on identical seeds -> inspe
 |---|---|---|---:|
 | Random Legal | `random-legal` | Samples a legal action type uniformly, then a legal target; no tactical layer | 1.000 |
 | Random Shop | `random-shop` | `GreedyTactical` card play; random legal shop actions | 1.637 |
-| Cheapest-Joker Shop | `greedy-shop` | `GreedyTactical` card play; buys the cheapest affordable Joker | 3.204 |
+| Cheapest-Joker Shop | `greedy-shop` | `GreedyTactical` card play; buys the cheapest affordable Joker | 3.196 |
 
-Those are the complete 240-seed v2 results on the `idIing/jackdaw-balatro` fork of Jackdaw at
-[`4d6f19d`](https://github.com/idIing/jackdaw-balatro/commit/4d6f19d9fe73f96603412a59ad5eab16d08937e7),
+Those are the complete 240-seed v2.1 results on the `idIing/jackdaw-balatro` fork of Jackdaw at
+[`de733eb`](https://github.com/idIing/jackdaw-balatro/commit/de733ebd494a5da71fb7049b3b6b18ecd039786c),
 the exact commit the lockfile installs; all three went 0/240 on wins. The stable ID `greedy-shop`
 predates the clearer display name and is retained so existing artifacts stay comparable. The paired
-Random Shop -> Cheapest-Joker Shop difference is +1.567 ante with a bootstrap-95 interval of
-`[+1.400, +1.729]`.
+Random Shop -> Cheapest-Joker Shop difference is +1.558 ante with a bootstrap-95 interval of
+`[+1.396, +1.721]`.
+
+v2.1 re-pinned the engine and fixed four `game_state` keys `preview_play` handed the scorer inside
+`GreedyTactical`'s ranking; only `greedy-shop` moved, and by 0.008 ante. Artifacts stamped
+`jackhammer/v2` were produced at the previous pin and are not directly comparable — see
+[what changed](docs/protocol-v2.md#what-changed-in-v21).
 
 ### The shared card play: `GreedyTactical`
 
@@ -47,12 +52,12 @@ it at all, which is what makes it an honest floor rather than a third variation 
 The 300 cap is exhaustive for a standard 8-card hand, where the complete set of ≤5-card subsets is
 218. Above 8 cards it truncates, and it drops the largest subsets first. It also does not bind
 equally on the two arms: shopping grows the hand, so `greedy-shop` truncates ~2.4x as often, and the
-`+1.567` understates the contrast by about 0.1 ante — see [known limits](docs/known-limits.md).
+`+1.558` understates the contrast by about 0.1 ante — see [known limits](docs/known-limits.md).
 
 This ladder is intentionally weak. `greedy-shop` does not understand Joker text, quality, rarity,
 or synergy; it never rerolls or sells, it does not buy vouchers or consumables, and it never opens a
 booster pack. Over the whole battery it emits 6 of the engine's 21 action types; `random-shop` emits
-16. So the `+1.567` prices buying the cheapest Joker at all against an arm that touches most of the
+16. So the `+1.558` prices buying the cheapest Joker at all against an arm that touches most of the
 shop at random — the narrowest agent on the slate beating the widest one. Every run records that
 histogram and the evaluator checks it against each baseline's published description
 ([declared repertoires](docs/known-limits.md#declared-repertoires)). That gap is an open
@@ -74,7 +79,7 @@ To use the kit as a library from your own project instead, install it — the fr
 the pinned simulator commit come with it, so a benchmark run from an install is attributable:
 
 ```bash
-pip install "jackhammer-benchmark @ git+https://github.com/idIing/jackhammer.git@v1.0.0"
+pip install "jackhammer-benchmark @ git+https://github.com/idIing/jackhammer.git@v1.1.0"
 ```
 
 ```python
@@ -85,7 +90,7 @@ from jackhammer.playground.seeds import load_battery
 spec = agents.get("greedy-shop")
 results = run_battery_with(load_battery("train")[:8], spec.make_decider, out_path="runs.jsonl",
                            config_label=spec.name, slot1=spec.slot1, slot2=spec.slot2)
-print(provenance.kit_pin())   # {'version': '1.0.0', 'commit': None, 'dirty': None}
+print(provenance.kit_pin())   # {'version': '1.1.0', 'commit': None, 'dirty': None}
 ```
 
 `scripts/` is not installed; the CLI below runs from a clone. An installed copy reports
@@ -108,16 +113,16 @@ uv run python scripts/evaluate.py \
   --agent greedy-shop --vs random-shop --limit 8 --workers 4
 ```
 
-Remove `--limit 8` for the reportable v1 comparison over all 240 seeds. The command writes raw
+Remove `--limit 8` for the reportable comparison over all 240 seeds. The command writes raw
 JSONL decision records, one result artifact per arm, and a paired comparison under `data/bench/`.
 The reportable run prints (artifact paths omitted here):
 
 ```text
 greedy-shop: 240 runs
-  mean highest ante: 3.204
+  mean highest ante: 3.196
 random-shop: 240 runs
   mean highest ante: 1.637
-paired (240 seeds): greedy-shop - random-shop = +1.567 ante [+1.400, +1.729] boot-95
+paired (240 seeds): greedy-shop - random-shop = +1.558 ante [+1.396, +1.721] boot-95
   interval excludes zero
 ```
 
@@ -143,8 +148,8 @@ the closest baseline with `--vs`.
 
 ## Add a seed dataset
 
-Protocol v2 always means the committed 240-seed `train` split. New coverage, stress, curriculum, or
-seed-difficulty questions belong in versioned sidecar manifests:
+The headline protocol always means the committed 240-seed `train` split. New coverage, stress,
+curriculum, or seed-difficulty questions belong in versioned sidecar manifests:
 
 ```bash
 uv run python scripts/evaluate.py \
@@ -153,7 +158,7 @@ uv run python scripts/evaluate.py \
   --split sample
 ```
 
-Custom datasets are stamped as `jackhammer/dataset-eval/v2`, never `jackhammer/v2`. That makes
+Custom datasets are stamped as `jackhammer/dataset-eval/v2.1`, never `jackhammer/v2.1`. That makes
 future questions such as “how does seed coverage affect measured agent strength?” additive without
 silently moving the headline benchmark. See [Adding datasets](docs/datasets.md).
 

@@ -15,10 +15,11 @@ from typing import Any
 from jackhammer.playground.seeds import _check_seeds
 
 DATASET_SCHEMA = "jackhammer.seed-dataset/v1"
-# v2 alongside the headline protocol: this route runs the same episode loop, so the
-# v2 action-set change (docs/protocol-v2.md) applies to dataset artifacts too. The
-# separate name keeps them unpairable with headline numbers, which is its whole job.
-DATASET_PROTOCOL = "jackhammer/dataset-eval/v2"
+# Versioned alongside the headline protocol: this route runs the same episode loop and
+# the same scorer, so every change that creates a new headline version -- including a
+# point release (docs/protocol-v2.md) -- reaches dataset artifacts too. The separate
+# name keeps them unpairable with headline numbers, which is its whole job.
+DATASET_PROTOCOL = "jackhammer/dataset-eval/v2.1"
 
 
 @dataclass(frozen=True)

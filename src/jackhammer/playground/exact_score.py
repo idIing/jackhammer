@@ -86,6 +86,13 @@ def preview_play(gs: dict[str, Any], indices: tuple[int, ...]) -> ScoreResult:
     played/held split in selection order, hands_left decrement, per-card stat
     flags, ``_press_play`` boss effects (The Hook consumes rng + moves held
     cards), the Group-A game_state keys, then the engine's ``score_hand``.
+
+    Every key ``score_hand`` reads out of ``game_state`` (scoring.py:437-458,
+    535, 908) is set here, with the value the engine would hold at the moment it
+    calls the scorer -- which for the two ``hands_played`` counters is the
+    PRE-increment value. An absent or stale key does not raise; it defaults, and
+    the preview then silently disagrees with the engine on exactly the boards
+    that read it.
     """
     hand: list[Card] = gs.get("hand", [])
     if not indices or not hand:
@@ -110,9 +117,13 @@ def preview_play(gs: dict[str, Any], indices: tuple[int, ...]) -> ScoreResult:
     played = [hand_copy[i] for i in indices]
     held = [c for i, c in enumerate(hand_copy) if i not in idx_set]
 
-    # Step 3: hands_left decrement / hands_played increment (game.py:520-522).
+    # Step 3: hands_left decrement only (game.py:632). The two hands_played
+    # counters do NOT move before scoring: the engine increments them in the
+    # event queued after evaluate_play (game.py:704-708, state_events.lua:523-24),
+    # so every scoring context reads PRE-increment values -- Loyalty Card's
+    # run-wide window (card.lua:3633) and DNA / Sixth Sense's current-round == 0
+    # checks (card.lua:3501/2604).
     hands_left = cr["hands_left"] - 1
-    hands_played = cr["hands_played"] + 1
 
     # Step 4: per-card stats (game.py:528-535) — on copies.
     for card in played:
@@ -142,7 +153,8 @@ def preview_play(gs: dict[str, Any], indices: tuple[int, ...]) -> ScoreResult:
     # deck + hand + discard_pile + played (Hook moves held→discard; len same).
     all_cards = [*live_deck, *held, *live_discard, *synth["discard_pile"], *played]
     synth["hands_left"] = hands_left
-    synth["current_round_hands_played"] = hands_played
+    synth["current_round_hands_played"] = cr.get("hands_played", 0)
+    synth["hands_played"] = gs.get("hands_played", 0)
     synth["discards_left"] = cr.get("discards_left", 0)
     synth["discards_used"] = cr.get("discards_used", 0)
     synth["money"] = synth["dollars"]
@@ -157,6 +169,12 @@ def preview_play(gs: dict[str, Any], indices: tuple[int, ...]) -> ScoreResult:
     synth["idol_card"] = cr.get("idol_card")
     synth["ancient_suit"] = cr.get("ancient_card", {}).get("suit")
     synth["consumable_usage_tarot"] = gs.get("consumable_usage_total", {}).get("tarot", 0)
+    # Run-wide counters score_hand reads straight off the top level (game.py never
+    # re-derives them): Throwback's x0.25-per-skip (scoring.py:458) and Mr. Bones'
+    # cumulative-round-chips death test (scoring.py:535,908). Chips are accumulated
+    # after scoring (game.py:710), so the pre-play value is the one to pass.
+    synth["skips"] = gs.get("skips", 0)
+    synth["chips"] = gs.get("chips", 0)
     # Group-B keys score_hand reads from gs (run_init.py:46,93,292,327).
     synth["joker_slots"] = gs.get("joker_slots", 5)
     synth["starting_deck_size"] = gs.get("starting_deck_size", 52)

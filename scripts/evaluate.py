@@ -17,8 +17,8 @@ writes the paired comparison, which is the only form in which a *difference*
 between two agents should be reported.
 
 The ``val`` split is retired. It is gated behind an explicit flag on purpose: its
-value is destroyed by repeated looks and it was consumed during development. v1
-evaluations use ``train`` (``docs/protocol-v1.md`` section 2).
+value is destroyed by repeated looks and it was consumed during development. Headline
+evaluations use ``train`` (``docs/protocol-v2.md`` section 2).
 """
 
 from __future__ import annotations

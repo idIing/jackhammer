@@ -56,7 +56,7 @@ wheels = [
 [[package]]
 name = "jackdaw"
 version = "0.1.0"
-source = { git = "https://github.com/idIing/jackdaw-balatro.git?rev=4d6f19d9fe73f96603412a59ad5eab16d08937e7#4d6f19d9fe73f96603412a59ad5eab16d08937e7" }
+source = { git = "https://github.com/idIing/jackdaw-balatro.git?rev=de733ebd494a5da71fb7049b3b6b18ecd039786c#de733ebd494a5da71fb7049b3b6b18ecd039786c" }
 dependencies = [
     { name = "gymnasium" },
     { name = "numpy" },
@@ -64,7 +64,7 @@ dependencies = [
 
 [[package]]
 name = "jackhammer-benchmark"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "jackdaw" },
@@ -79,7 +79,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "jackdaw", git = "https://github.com/idIing/jackdaw-balatro.git?rev=4d6f19d9fe73f96603412a59ad5eab16d08937e7" },
+    { name = "jackdaw", git = "https://github.com/idIing/jackdaw-balatro.git?rev=de733ebd494a5da71fb7049b3b6b18ecd039786c" },
     { name = "numpy", specifier = ">=1.24" },
 ]
 

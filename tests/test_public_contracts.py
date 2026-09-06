@@ -39,14 +39,15 @@ def test_shop_baselines_record_their_tactical_layer():
 
 
 def test_protocol_is_v2():
-    """v1 numbers were produced by agents that could not skip a blind.
+    """v1 numbers were produced by agents that could not skip a blind, and v2.0
+    numbers by a scorer that handed the engine four wrong ``game_state`` keys.
 
     The stamp is what tells a reader which apparatus produced a number. Pinning it
     here means demoting the protocol has to be deliberate.
     """
     from jackhammer.bench.provenance import PROTOCOL
 
-    assert PROTOCOL == "jackhammer/v2"
+    assert PROTOCOL == "jackhammer/v2.1"
 
 
 def test_episode_loop_plays_no_phase_for_the_agent():
@@ -197,7 +198,7 @@ def test_a_swept_budget_is_not_stamped_as_a_v1_result():
     assert provenance.TACTICAL_PROTOCOL != provenance.PROTOCOL
     # The frozen protocol itself is pinned by `test_protocol_is_v2`; what matters
     # here is that a sweep can never be stamped with it, whatever its version.
-    assert provenance.PROTOCOL == "jackhammer/v2"
+    assert provenance.PROTOCOL == "jackhammer/v2.1"
 
 
 def test_the_engine_dependency_pins_the_protocol_commit():
