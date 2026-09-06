@@ -27,6 +27,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from jackdaw.engine.actions import RedeemVoucher, SelectBlind, SellCard, SortHand
 from jackdaw.env import (
     ActionType,
     BalatroEnvironment,
@@ -34,6 +35,7 @@ from jackdaw.env import (
     get_action_mask,
 )
 
+from jackhammer.bench.repertoire import ALL_ACTIONS
 from jackhammer.playground.harness import (
     DecisionObserver,
     GreedyShop,
@@ -47,6 +49,7 @@ from jackhammer.playground.harness import (
     Tactical,
     ValueEstimator,
     build_decider,
+    event_for_engine_action,
     run_battery,
 )
 from jackhammer.playground.seeds import load_battery
@@ -446,8 +449,48 @@ def test_observer_sees_the_reset_every_real_step_and_every_decision(tmp_path):
     assert len(observer.events) == steps + len(seeds)
     assert len(observer.decisions) == steps
     # The engine action behind a decision is labelled, not swallowed.
-    assert observer.events.count("select_blind") >= 1
+    assert observer.events.count("SelectBlind") >= 1
     assert None not in observer.events
+    # Every label is either the reset or a name the rest of the kit already knows:
+    # an event label and a declared action are one vocabulary, not two.
+    for event in observer.events:
+        assert event == "run_reset" or event.split(":", 1)[0] in ALL_ACTIONS
+
+
+def test_event_labels_are_the_published_action_vocabulary():
+    """``type(action).__name__`` is not the kit's vocabulary, and the two places it
+    differs are exactly the two the engine spells with a discriminating field."""
+    assert event_for_engine_action({}, SellCard(area="jokers", card_index=0)) == "SellJoker"
+    assert (
+        event_for_engine_action({}, SellCard(area="consumables", card_index=0)) == "SellConsumable"
+    )
+    assert event_for_engine_action({}, SortHand(mode="rank")) == "SortHandRank"
+    assert event_for_engine_action({}, SortHand(mode="suit")) == "SortHandSuit"
+    assert event_for_engine_action({}, SelectBlind()) == "SelectBlind"
+
+    # A discriminator the table does not cover is wrong loudly: the label is not
+    # an action name either, so a repertoire check cannot quietly accept it.
+    assert event_for_engine_action({}, SortHand(mode="colour")) not in ALL_ACTIONS
+
+
+def test_redeem_voucher_is_labelled_from_the_pre_step_state():
+    """The handler pops the redeemed voucher, so the index only resolves before the
+    step -- the qualifier cannot be recovered from the post-step state, which is why
+    the label is built here and why the exact spelling is a published contract."""
+
+    class _Voucher:
+        center_key = "v_hieroglyph"
+
+    state = {"shop_vouchers": [_Voucher()]}
+    assert event_for_engine_action(state, RedeemVoucher(card_index=0)) == (
+        "RedeemVoucher:v_hieroglyph"
+    )
+    # Out of range, or a voucher with no key: named, never silently blank.
+    assert event_for_engine_action(state, RedeemVoucher(card_index=7)) == "RedeemVoucher:unknown"
+    assert (
+        event_for_engine_action({"shop_vouchers": [object()]}, RedeemVoucher(card_index=0))
+        == "RedeemVoucher:unknown"
+    )
 
 
 def test_observer_does_not_move_the_numbers(tmp_path):

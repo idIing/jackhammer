@@ -172,6 +172,37 @@ Neither hook sees the checkpointed previews an agent runs while deciding. A sear
 would make the trace a record of what the agent *considered* rather than of what happened, so the
 kit suspends observation for the duration of each decider call.
 
+### The event labels
+
+`event` is either `"run_reset"` — the one label that is not an action, so it can never collide
+with one — or an action name from the same vocabulary as `AgentSpec.declared_actions` and the
+repertoire report: `PlayHand`, `SelectBlind`, `SellJoker`, `SortHandRank`, and so on. One label
+carries a qualifier after a colon, `RedeemVoucher:v_hieroglyph`, because the voucher's identity is
+an index into the shop that the redemption itself removes.
+
+Match on `event.split(":", 1)[0]` if you want the action and not the qualifier. Do not match on the
+engine's class names: `jackdaw` spells two actions with a discriminating field where this
+vocabulary spells four (`SellCard.area`, `SortHand.mode`), so `SellCard` is not a name this kit
+uses anywhere.
+
+### Pure-read, and what that costs you
+
 An observer is **pure-read** instrumentation. It is called for side effects, its return value is
 ignored, and a run with one produces the same numbers as a run without — mutating the state you
 are handed corrupts the run you were measuring.
+
+The state you are handed is the **live engine dict**, not a snapshot. `DirectAdapter` is zero-copy
+by design: `raw_state` is the engine's own object, and the engine keeps stepping it in place.
+Reading inside the call is correct and free. **Storing it is not** — consecutive observations are
+often literally the same object, so a list of stored states resolves, later, to whatever the engine
+last wrote. If you need to keep one, copy it:
+
+```python
+from jackdaw.engine.fastcopy import fast_deepcopy
+
+def observe(self, state, *, event=None):
+    self.kept.append(fast_deepcopy(state))   # ~0.2 ms; a few percent of a battery run
+```
+
+That cost is charged only to the observers that need it, which is why the kit does not copy for
+you.
