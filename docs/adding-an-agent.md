@@ -133,3 +133,76 @@ an agent doing far less than you think is not visible in its mean. Only after th
 the same public battery until the sign changes.
 
 Never change an existing stable agent ID's behavior. A behavioral revision gets a new ID.
+
+## Watching a run
+
+Sometimes the question is not "how deep did it get" but "what happened on the way". Pass an
+`observer=` to `run_battery` or `run_battery_with` and you get told, without changing the run:
+
+```python
+from jackhammer.playground.harness import run_battery_with
+
+class LegalityCoverage:
+    def __init__(self):
+        self.offered = []
+
+    def observe_decision(self, state, mask, action):
+        self.offered.append((sorted(mask.type_mask.nonzero()[0].tolist()),
+                             int(action.action_type)))
+
+observer = LegalityCoverage()
+run_battery_with(seeds, spec.make_decider, "runs.jsonl", "coverage", observer=observer)
+```
+
+Two hooks, at two layers. They are **independent** — implement whichever one you need, both, and
+inherit nothing: the kit matches them by name, not by base class. (`NullObserver` is available as a
+base with both as no-ops if you would rather subclass.)
+
+- `observe(state, *, event=None)` — the raw engine state after the reset and after every step,
+  with a label for the action that produced it. This is the layer that sees both sides of a step,
+  so it is where a state-transition check belongs.
+- `observe_decision(state, mask, action)` — the state and legal-action mask your decider was
+  handed, and the action it returned. The engine layer cannot reconstruct the mask.
+
+An object with neither hook raises `TypeError` rather than running silently: a misspelled hook
+would otherwise produce a run that looks instrumented and records nothing.
+
+Neither hook sees the checkpointed previews an agent runs while deciding. A search agent
+`get_state`/`load_state`s and re-steps the engine dozens of times per decision; counting those
+would make the trace a record of what the agent *considered* rather than of what happened, so the
+kit suspends observation for the duration of each decider call.
+
+### The event labels
+
+`event` is either `"run_reset"` — the one label that is not an action, so it can never collide
+with one — or an action name from the same vocabulary as `AgentSpec.declared_actions` and the
+repertoire report: `PlayHand`, `SelectBlind`, `SellJoker`, `SortHandRank`, and so on. One label
+carries a qualifier after a colon, `RedeemVoucher:v_hieroglyph`, because the voucher's identity is
+an index into the shop that the redemption itself removes.
+
+Match on `event.split(":", 1)[0]` if you want the action and not the qualifier. Do not match on the
+engine's class names: `jackdaw` spells two actions with a discriminating field where this
+vocabulary spells four (`SellCard.area`, `SortHand.mode`), so `SellCard` is not a name this kit
+uses anywhere.
+
+### Pure-read, and what that costs you
+
+An observer is **pure-read** instrumentation. It is called for side effects, its return value is
+ignored, and a run with one produces the same numbers as a run without — mutating the state you
+are handed corrupts the run you were measuring.
+
+The state you are handed is the **live engine dict**, not a snapshot. `DirectAdapter` is zero-copy
+by design: `raw_state` is the engine's own object, and the engine keeps stepping it in place.
+Reading inside the call is correct and free. **Storing it is not** — consecutive observations are
+often literally the same object, so a list of stored states resolves, later, to whatever the engine
+last wrote. If you need to keep one, copy it:
+
+```python
+from jackdaw.engine.fastcopy import fast_deepcopy
+
+def observe(self, state, *, event=None):
+    self.kept.append(fast_deepcopy(state))   # ~0.2 ms; a few percent of a battery run
+```
+
+That cost is charged only to the observers that need it, which is why the kit does not copy for
+you.

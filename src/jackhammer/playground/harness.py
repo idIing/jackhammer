@@ -25,9 +25,11 @@ from __future__ import annotations
 
 import itertools
 import random
-from typing import Protocol, runtime_checkable
+from contextlib import contextmanager
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
+from jackdaw.engine.actions import RedeemVoucher, SellCard, SortHand
 from jackdaw.env import (
     ActionType,
     BalatroEnvironment,
@@ -587,6 +589,190 @@ def _packet(fa: FactoredAction, reasoning: str, was_fallback: bool):
 
 
 # ---------------------------------------------------------------------------
+# Run observation
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class StateObserver(Protocol):
+    """Watches the engine layer: the state after the reset and after every step."""
+
+    def observe(self, state: dict[str, Any], *, event: str | None = None) -> None:
+        """``event`` labels what produced the state.
+
+        Either ``"run_reset"`` -- the only label that is not an action, so it can
+        never collide with one -- or an action label from
+        :func:`event_for_engine_action`.
+        """
+
+
+@runtime_checkable
+class DecisionObserver(Protocol):
+    """Watches the agent layer: what a decider was offered, and what it chose."""
+
+    def observe_decision(self, state: dict[str, Any], mask: Any, action: Any) -> None:
+        """``mask`` is the legal-action mask handed to the decider for ``state``."""
+
+
+#: Anything a battery run will accept as instrumentation.
+RunObserver = StateObserver | DecisionObserver
+"""Pure-read instrumentation attached to a battery run.
+
+An observer sees a run; it never changes one. Its hooks are called for side
+effects only, their return values are ignored, and an observer that mutates the
+state it is handed corrupts the run it was supposed to measure.
+
+The state passed to :meth:`StateObserver.observe` is the *live* engine dict, not
+a snapshot: ``DirectAdapter.raw_state`` returns the engine's own object, and the
+engine keeps stepping it in place. Read what you need inside the call. An
+observer that stores the dict and reads it later is not reading the state it was
+shown -- consecutive observations are frequently the same object, so the stored
+rows all resolve to whatever the engine last wrote. If you need to keep a state,
+copy it: ``jackdaw.engine.fastcopy.fast_deepcopy`` costs about 0.2 ms per state,
+which is a few percent of a battery run and is charged only to the observers
+that need it.
+
+The two hooks are independent, because the two things worth watching arrive at
+different layers, and implementing one does not imply wanting the other.
+:class:`StateObserver` fires at the engine layer and is the only place a
+state-transition check can see both sides of a step. :class:`DecisionObserver`
+fires at the agent layer with the legal-action mask, which the engine layer
+cannot reconstruct. Implement either, or both; a class that implements neither
+is rejected rather than silently ignored. :class:`NullObserver` is a convenient
+base with both as no-ops, but inheriting it is not required — the hooks are
+matched structurally.
+
+Neither hook sees the checkpointed previews an agent runs while deciding: those
+load and re-step the engine, and counting them would make the trace a record of
+what the agent considered rather than of what happened.
+"""
+
+
+class NullObserver:
+    """An observer whose hooks do nothing. Override one, inherit the rest."""
+
+    def observe(self, state: dict[str, Any], *, event: str | None = None) -> None:
+        """Ignore the state."""
+
+    def observe_decision(self, state: dict[str, Any], mask: Any, action: Any) -> None:
+        """Ignore the decision."""
+
+
+_SELL_AREA_NAMES = {"jokers": "SellJoker", "consumables": "SellConsumable"}
+_SORT_MODE_NAMES = {"rank": "SortHandRank", "suit": "SortHandSuit"}
+
+
+def action_type_name(action: Any) -> str:
+    """The engine action's name in ``ACTION_NAMES``, the kit's action vocabulary.
+
+    Not ``type(action).__name__``: that is a third spelling of the same set, and
+    it has already drifted from the published one. The engine writes two actions
+    with a discriminating field where the table writes four -- ``SellCard.area``
+    splits into ``SellJoker``/``SellConsumable``, ``SortHand.mode`` into
+    ``SortHandRank``/``SortHandSuit``. An observer labelling by class name would
+    hand out ``SellCard``, which ``repertoire.check_names`` rejects, appears in no
+    artifact, and has lost which of the two happened.
+
+    An unrecognised discriminator yields a name that is not in ``ACTION_NAMES``
+    either -- wrong loudly rather than plausibly.
+    """
+    if isinstance(action, SellCard):
+        return _SELL_AREA_NAMES.get(action.area, f"SellCard:{action.area}")
+    if isinstance(action, SortHand):
+        return _SORT_MODE_NAMES.get(action.mode, f"SortHand:{action.mode}")
+    return type(action).__name__
+
+
+def event_for_engine_action(state: dict[str, Any], action: Any) -> str:
+    """Label an engine action for :meth:`StateObserver.observe`.
+
+    The label is the action's :func:`action_type_name`, optionally followed by
+    ``:`` and a qualifier. One action takes a qualifier today: ``RedeemVoucher``
+    identifies the voucher, because ``card_index`` is an index into
+    ``shop_vouchers`` and the handler pops the entry (``game.py`` ``vouchers.pop``),
+    so the index no longer resolves once the step returns. That read is why this
+    function takes the *pre-step* ``state``.
+
+    These strings are a contract, not a debug convenience. An observer's whole
+    output is keyed on them, and a rename is invisible to it -- the run still
+    completes, the labels simply stop matching -- so treat them as published, and
+    reach for :func:`action_type_name` rather than a new spelling.
+    """
+    if isinstance(action, RedeemVoucher):
+        vouchers = state.get("shop_vouchers", ()) or ()
+        if 0 <= action.card_index < len(vouchers):
+            key = getattr(vouchers[action.card_index], "center_key", "")
+            if key:
+                return f"RedeemVoucher:{key}"
+        return "RedeemVoucher:unknown"
+    return action_type_name(action)
+
+
+class _ObservingAdapter(DirectAdapter):
+    """``DirectAdapter`` that reports the post-reset and post-step state.
+
+    Private on purpose: the kit constructs it, so the kit can rely on
+    :meth:`suspend_observation` existing. Exposing an ``adapter_factory=``
+    parameter instead would put that requirement in a public signature the
+    caller could satisfy with a plain ``DirectAdapter``.
+    """
+
+    def __init__(self, observer: StateObserver) -> None:
+        super().__init__()
+        self._observer = observer
+        self._suspensions = 0
+
+    def reset(
+        self,
+        back_key: str,
+        stake: int,
+        seed: str,
+        *,
+        challenge: dict[str, Any] | None = None,
+    ):
+        snapshot = super().reset(back_key, stake, seed, challenge=challenge)
+        self._observer.observe(self.raw_state, event="run_reset")
+        return snapshot
+
+    def step(self, action):
+        event = event_for_engine_action(self.raw_state, action)
+        snapshot = super().step(action)
+        if not self._suspensions:
+            self._observer.observe(self.raw_state, event=event)
+        return snapshot
+
+    @contextmanager
+    def suspend_observation(self):
+        """Exclude an agent's checkpointed previews from the observed trace."""
+        self._suspensions += 1
+        try:
+            yield
+        finally:
+            self._suspensions -= 1
+
+
+def _observed_decider(decide_fn, adapter: _ObservingAdapter | None, observer):
+    """Wrap ``decide_fn`` so previews are unobserved and the real choice is reported.
+
+    ``adapter`` is ``None`` when the observer only watches decisions: there is no
+    engine-layer trace to keep previews out of, so there is nothing to suspend.
+    """
+    wants_decisions = isinstance(observer, DecisionObserver)
+
+    def decide(raw_state, mask, history):
+        if adapter is None:
+            packet = decide_fn(raw_state, mask, history)
+        else:
+            with adapter.suspend_observation():
+                packet = decide_fn(raw_state, mask, history)
+        if wants_decisions:
+            observer.observe_decision(raw_state, mask, packet[0])
+        return packet
+
+    return decide
+
+
+# ---------------------------------------------------------------------------
 # Battery runner
 # ---------------------------------------------------------------------------
 
@@ -599,6 +785,7 @@ def run_battery_with(
     slot1: str = "",
     slot2: str = "",
     max_steps: int = 2000,
+    observer: RunObserver | None = None,
 ) -> list[RunResult]:
     """Run an arbitrary decider over ``seeds``; one JSONL at ``out_path``.
 
@@ -621,10 +808,31 @@ def run_battery_with(
     ``stake=1`` — the env defaults), fresh ``RunRecorder`` appending to
     ``out_path``, a tagged ``RunMeta``, then ``play_episode``. Returns one
     ``RunResult`` per seed, in order.
+
+    An optional ``observer`` (:class:`RunObserver`) is pure-read instrumentation:
+    it is told the engine state after the reset and after every real step, and
+    the mask and action of every real decision. It cannot change the run, and a
+    run with one produces the same numbers as a run without.
     """
+    if observer is not None and not isinstance(observer, StateObserver | DecisionObserver):
+        raise TypeError(
+            "observer implements neither observe(state, *, event=None) nor "
+            f"observe_decision(state, mask, action); {type(observer).__name__} would "
+            "be called for nothing. Check the hook name against "
+            "jackhammer.playground.harness."
+        )
+
     results: list[RunResult] = []
     for seed in seeds:
-        env = BalatroEnvironment(adapter_factory=DirectAdapter)
+        adapter: _ObservingAdapter | None = None
+        if isinstance(observer, StateObserver):
+            adapter = _ObservingAdapter(observer)
+            # Bound as a default: BalatroEnvironment calls the factory again on
+            # every reset, and a bare closure would hand back whichever adapter
+            # the *loop* had reached by then, not this seed's.
+            env = BalatroEnvironment(adapter_factory=lambda bound=adapter: bound)
+        else:
+            env = BalatroEnvironment(adapter_factory=DirectAdapter)
         recorder = RunRecorder(output_path=out_path)
         run_meta = RunMeta(
             seed=seed,
@@ -636,6 +844,8 @@ def run_battery_with(
             config_label=config_label,
         )
         decide_fn = make_decider(env, seed)
+        if observer is not None:
+            decide_fn = _observed_decider(decide_fn, adapter, observer)
         results.append(play_episode(env, seed, decide_fn, recorder, run_meta, max_steps=max_steps))
     return results
 
@@ -648,6 +858,7 @@ def run_battery(
     out_path: str,
     config_label: str,
     max_steps: int = 2000,
+    observer: RunObserver | None = None,
 ) -> list[RunResult]:
     """Run the (tactical, shop, value) config over ``seeds``; one JSONL at ``out_path``.
 
@@ -662,4 +873,5 @@ def run_battery(
         slot1=shop.name,
         slot2=value.name,
         max_steps=max_steps,
+        observer=observer,
     )
