@@ -2,11 +2,11 @@
 
 The benchmark fixes the *tactical* (in-blind card play) layer and swaps two slots:
 
-- **Slot 1 — shop policy** (:class:`ShopPolicy`): buy / sell / reroll / pack picks.
-- **Slot 2 — value estimator** (:class:`ValueEstimator`): scores a state so Slot 1
+- **Slot 1 — shop policy** (``ShopPolicy``): buy / sell / reroll / pack picks.
+- **Slot 2 — value estimator** (``ValueEstimator``): scores a state so Slot 1
   can rank candidate moves.
 
-Every idea = fill a slot, run :func:`run_battery` over the fixed seed bank, read one
+Every idea = fill a slot, run ``run_battery`` over the fixed seed bank, read one
 comparable number out of the recorder JSONL and result artifact.
 
 This module is *plumbing*: the baseline fills are deliberately crude. The only hard
@@ -16,7 +16,7 @@ slot's output), and (b) any slot that previews/rolls out is **non-mutating** —
 ``src/jackhammer/selfplay/tools.py:calculate_score``. A value estimator that mutates the live env
 would corrupt the real game.
 
-The composer (:func:`build_decider`) closes over the *same* ``env`` object that
+The composer (``build_decider``) closes over the *same* ``env`` object that
 ``play_episode`` drives, so value estimators get checkpoint access without
 ``decide_fn`` ever receiving ``env`` directly.
 """
@@ -243,7 +243,7 @@ class GreedyTactical:
     def _best_play(self, env, raw_state, mask):
         """Exact-score every legal subset; return (score, hand_type, combo) or None.
 
-        Thin delegate to the module-level :func:`best_play_scan`.
+        Thin delegate to the module-level ``best_play_scan``.
         """
         return best_play_scan(env, raw_state, mask, self.score_budget)
 
@@ -579,7 +579,7 @@ def _packet(fa: FactoredAction, reasoning: str, was_fallback: bool):
     ``reasoning.startswith("fallback")`` over the slot's own name, which made the
     flag a property of a string rather than of what happened.
 
-    It still cannot see a slot that calls :func:`get_fallback_action` itself — such a
+    It still cannot see a slot that calls ``get_fallback_action`` itself — such a
     policy returns an ordinary action and is recorded as having decided. Reading this
     flag as "the agent had no opinion" is therefore wrong in a way no counter here can
     detect; it is a lower bound on abstention, not a measure of it.
@@ -602,7 +602,7 @@ class StateObserver(Protocol):
 
         Either ``"run_reset"`` -- the only label that is not an action, so it can
         never collide with one -- or an action label from
-        :func:`event_for_engine_action`.
+        ``event_for_engine_action``.
         """
 
 
@@ -614,38 +614,36 @@ class DecisionObserver(Protocol):
         """``mask`` is the legal-action mask handed to the decider for ``state``."""
 
 
-#: Anything a battery run will accept as instrumentation.
+# Anything a battery run will accept as instrumentation.
+#
+# An observer sees a run; it never changes one. Its hooks are called for side
+# effects only, their return values are ignored, and an observer that mutates
+# the state it is handed corrupts the run it was supposed to measure.
+#
+# The state passed to StateObserver.observe is the *live* engine dict, not a
+# snapshot: ``DirectAdapter.raw_state`` returns the engine's own object, and
+# the engine keeps stepping it in place. Read what you need inside the call.
+# An observer that stores the dict and reads it later is not reading the
+# state it was shown -- consecutive observations are frequently the same
+# object, so the stored rows all resolve to whatever the engine last wrote.
+# If you need to keep a state, copy it: ``jackdaw.engine.fastcopy.fast_deepcopy``
+# costs about 0.2 ms per state, which is a few percent of a battery run and
+# is charged only to the observers that need it.
+#
+# The two hooks are independent, because the two things worth watching
+# arrive at different layers, and implementing one does not imply wanting
+# the other. StateObserver fires at the engine layer and is the only place
+# a state-transition check can see both sides of a step. DecisionObserver
+# fires at the agent layer with the legal-action mask, which the engine
+# layer cannot reconstruct. Implement either, or both; a class that
+# implements neither is rejected rather than silently ignored. NullObserver
+# is a convenient base with both as no-ops, but inheriting it is not
+# required -- the hooks are matched structurally.
+#
+# Neither hook sees the checkpointed previews an agent runs while deciding:
+# those load and re-step the engine, and counting them would make the trace
+# a record of what the agent considered rather than of what happened.
 RunObserver = StateObserver | DecisionObserver
-"""Pure-read instrumentation attached to a battery run.
-
-An observer sees a run; it never changes one. Its hooks are called for side
-effects only, their return values are ignored, and an observer that mutates the
-state it is handed corrupts the run it was supposed to measure.
-
-The state passed to :meth:`StateObserver.observe` is the *live* engine dict, not
-a snapshot: ``DirectAdapter.raw_state`` returns the engine's own object, and the
-engine keeps stepping it in place. Read what you need inside the call. An
-observer that stores the dict and reads it later is not reading the state it was
-shown -- consecutive observations are frequently the same object, so the stored
-rows all resolve to whatever the engine last wrote. If you need to keep a state,
-copy it: ``jackdaw.engine.fastcopy.fast_deepcopy`` costs about 0.2 ms per state,
-which is a few percent of a battery run and is charged only to the observers
-that need it.
-
-The two hooks are independent, because the two things worth watching arrive at
-different layers, and implementing one does not imply wanting the other.
-:class:`StateObserver` fires at the engine layer and is the only place a
-state-transition check can see both sides of a step. :class:`DecisionObserver`
-fires at the agent layer with the legal-action mask, which the engine layer
-cannot reconstruct. Implement either, or both; a class that implements neither
-is rejected rather than silently ignored. :class:`NullObserver` is a convenient
-base with both as no-ops, but inheriting it is not required — the hooks are
-matched structurally.
-
-Neither hook sees the checkpointed previews an agent runs while deciding: those
-load and re-step the engine, and counting them would make the trace a record of
-what the agent considered rather than of what happened.
-"""
 
 
 class NullObserver:
@@ -684,9 +682,9 @@ def action_type_name(action: Any) -> str:
 
 
 def event_for_engine_action(state: dict[str, Any], action: Any) -> str:
-    """Label an engine action for :meth:`StateObserver.observe`.
+    """Label an engine action for ``StateObserver.observe``.
 
-    The label is the action's :func:`action_type_name`, optionally followed by
+    The label is the action's ``action_type_name``, optionally followed by
     ``:`` and a qualifier. One action takes a qualifier today: ``RedeemVoucher``
     identifies the voucher, because ``card_index`` is an index into
     ``shop_vouchers`` and the handler pops the entry (``game.py`` ``vouchers.pop``),
@@ -696,7 +694,7 @@ def event_for_engine_action(state: dict[str, Any], action: Any) -> str:
     These strings are a contract, not a debug convenience. An observer's whole
     output is keyed on them, and a rename is invisible to it -- the run still
     completes, the labels simply stop matching -- so treat them as published, and
-    reach for :func:`action_type_name` rather than a new spelling.
+    reach for ``action_type_name`` rather than a new spelling.
     """
     if isinstance(action, RedeemVoucher):
         vouchers = state.get("shop_vouchers", ()) or ()
@@ -712,7 +710,7 @@ class _ObservingAdapter(DirectAdapter):
     """``DirectAdapter`` that reports the post-reset and post-step state.
 
     Private on purpose: the kit constructs it, so the kit can rely on
-    :meth:`suspend_observation` existing. Exposing an ``adapter_factory=``
+    ``suspend_observation`` existing. Exposing an ``adapter_factory=``
     parameter instead would put that requirement in a public signature the
     caller could satisfy with a plain ``DirectAdapter``.
     """
@@ -789,7 +787,7 @@ def run_battery_with(
 ) -> list[RunResult]:
     """Run an arbitrary decider over ``seeds``; one JSONL at ``out_path``.
 
-    The general form of :func:`run_battery`. ``make_decider(env, seed) -> decide_fn``
+    The general form of ``run_battery``. ``make_decider(env, seed) -> decide_fn``
     is the widest agent contract the harness can honour: it hands the agent the
     same live ``env`` that ``play_episode`` drives, so an agent may checkpoint and
     preview via ``get_state``/``load_state``, and returns the
@@ -809,7 +807,7 @@ def run_battery_with(
     ``out_path``, a tagged ``RunMeta``, then ``play_episode``. Returns one
     ``RunResult`` per seed, in order.
 
-    An optional ``observer`` (:class:`RunObserver`) is pure-read instrumentation:
+    An optional ``observer`` (``RunObserver``) is pure-read instrumentation:
     it is told the engine state after the reset and after every real step, and
     the mask and action of every real decision. It cannot change the run, and a
     run with one produces the same numbers as a run without.
@@ -862,7 +860,7 @@ def run_battery(
 ) -> list[RunResult]:
     """Run the (tactical, shop, value) config over ``seeds``; one JSONL at ``out_path``.
 
-    The two-slot special case of :func:`run_battery_with`, kept because it is the
+    The two-slot special case of ``run_battery_with``, kept because it is the
     vocabulary the playground A/Bs are written in.
     """
     return run_battery_with(

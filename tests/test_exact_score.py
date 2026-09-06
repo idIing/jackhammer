@@ -12,13 +12,13 @@ gate of its own, and the gate has to be *differential* — the preview compared
 against the engine, at states real play reaches. Two forms, because they fail
 independently:
 
-* :func:`test_preview_game_state_matches_the_engines_key_for_key` is the **class**
+* ``test_preview_game_state_matches_the_engines_key_for_key`` is the **class**
   gate. It intercepts ``score_hand`` on both paths for the same (state, play) and
   diffs the two ``game_state`` dicts over the exact key set the scorer reads. It
   fails on a key that is missing *and* on a key that is present with the wrong
   value, which a score comparison only catches when some card on the board happens
   to read it.
-* :func:`test_preview_total_matches_the_engine_for_every_legal_play` is the
+* ``test_preview_total_matches_the_engine_for_every_legal_play`` is the
   **outcome** gate: over every play subset the tactical would enumerate, the
   preview's total and hand type equal the engine's own dry-run.
 
